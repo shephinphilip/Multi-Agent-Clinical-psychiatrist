@@ -1181,20 +1181,23 @@ class ConversationGeneratorAgent:
         
         return random.choice(available_questions)
     
+
     def generate_follow_up(self, context: Dict) -> str:
         """Generate natural follow-up based on what user said"""
         user_message = context.get('user_message', '')
         conversation_history = context.get('conversation_history', [])
         username = context.get('username', '')
         empathy_level = context.get('empathy_level', 'moderate')
-        
+        memory_summary = context.get('memory_summary') or "No detailed history captured yet."
+        memory_highlight = context.get('memory_highlight') or ""
+
         # ✅ ENHANCED: Detect serious content in user message
         text_lower = user_message.lower()
         is_serious = any(word in text_lower for word in [
-            'beat', 'hit', 'hurt', 'abuse', 'violence', 'not good at all', 
+            'beat', 'hit', 'hurt', 'abuse', 'violence', 'not good at all',
             'terrible', 'awful', 'horrible', 'suicide', 'kill', 'die'
         ])
-        
+
         system_prompt = f"""You are Zen, a warm and empathetic companion AI. You just heard something {'VERY SERIOUS' if is_serious else 'important'} from {username}.
 
     Your style:
@@ -1202,7 +1205,7 @@ class ConversationGeneratorAgent:
     - {"IMMEDIATELY address the serious content they shared - don't move to other topics" if is_serious else "Acknowledge what they shared naturally"}
     - {"Show concern and validate their experience" if is_serious else "Be supportive and curious"}
     - Use their name ({username}) occasionally
-    - 1-2 sentences max
+    - Offer 3-4 sentences so they feel genuinely heard
     - {"If they mentioned violence/abuse, express concern and ask if they're safe" if is_serious else "Ask a natural follow-up question"}
 
     {"CRITICAL: They mentioned something serious (violence, abuse, or extreme distress). You MUST acknowledge this directly." if is_serious else ""}"""
@@ -1214,11 +1217,14 @@ class ConversationGeneratorAgent:
                 f"{msg.get('role', 'Unknown')}: {msg.get('content', '')}"
                 for msg in last_messages
             ])
-        
+
         user_prompt = f"""Recent conversation:
     {recent_exchange if recent_exchange else "Just starting"}
 
     {username} just said: "{user_message}"
+
+    Memory summary to keep in mind: {memory_summary}
+    {f"Specific highlight: {memory_highlight}" if memory_highlight else ""}
 
     Generate a natural, empathetic response that:
     1. {"DIRECTLY addresses what they just shared (especially if serious/concerning)" if is_serious else "Acknowledges what they said"}
@@ -1237,25 +1243,32 @@ class ConversationGeneratorAgent:
                 temperature=0.8 if not is_serious else 0.7,  # Slightly lower temp for serious topics
                 max_tokens=150
             )
-            
+
             content = response.choices[0].message.content
             if content is not None:
                 return content.strip()
             else:
-                return "I hear you. Can you tell me more about that?"
-                
+                return (
+                    f"Thank you for trusting me with that, {username}. I'm remembering what you've shared earlier and keeping it close so you don't have to repeat yourself. Could you walk me through how this is affecting you day by day? I'm right here beside you while we explore it together."
+                )
+
         except Exception as e:
             logger.error(f"❌ Failed to generate follow-up: {e}")
-            
-            # Fallback for serious content
+
             if is_serious:
                 if 'beat' in text_lower or 'hit' in text_lower:
-                    return f"I'm really concerned about what you just shared, {username}. That sounds serious. Are you safe right now?"
+                    return (
+                        f"I'm really concerned about what you just shared, {username}. That sounds very serious, and your safety matters deeply to me. Can you let me know if you're safe right now and whether there's someone nearby who can support you? We can figure out the next steps together, and I won't rush you."
+                    )
                 elif 'not good' in text_lower:
-                    return f"I'm sorry things aren't going well, {username}. What's been bothering you most?"
-            
-            return "Can you tell me more about that?"
-    
+                    return (
+                        f"I'm sorry things aren't going well, {username}. I can feel how heavy this has been for you, and I want to focus on what hurts the most. Would you share a bit more about the part that's been the hardest lately so I can support you better? We can take this slowly, and I'll stay with you throughout."
+                    )
+
+            return (
+                f"I really appreciate you telling me that, {username}. I'm holding onto the details you've already shared so you don't need to repeat them, and I want to understand this part with the same care. Would you feel okay sharing a little more about what this has been like for you lately? I'm staying right here with you, and we can pause whenever you need."
+            )
+
     def generate_wellness_response(self, user_message: str, context: ConversationContext) -> str:
         """Generate response for wellness-focused conversation"""
         import random
@@ -1392,8 +1405,208 @@ class ClinicalAgentOrchestrator:
         self.empathy = EmpathyAgent()
         self.conversation_gen = ConversationGeneratorAgent()
         self.memory_agent = ContextualMemoryAgent()  # NEW
-        
+
         logger.info("✅ Clinical Agent Orchestrator initialized with Memory")
+
+    def _format_memory_summary(self, memory: ContextualMemory) -> str:
+        """Create a concise summary of memory details for prompts."""
+        if not memory:
+            return "No detailed history captured yet."
+
+        parts: List[str] = []
+
+        if memory.concerns:
+            concerns = [c.get('topic', 'something personal') for c in memory.concerns[-3:]]
+            parts.append("concerns about " + ", ".join(concerns))
+
+        if memory.stressors:
+            stressor_terms = []
+            for category, items in memory.stressors.items():
+                if items:
+                    stressor_terms.append(f"{category} pressures like {items[-1]}")
+            if stressor_terms:
+                parts.append("stressors such as " + ", ".join(stressor_terms[:2]))
+
+        if memory.supportive_people:
+            parts.append("support from " + ", ".join(memory.supportive_people[:2]))
+
+        if memory.coping_mechanisms:
+            parts.append("coping tools like " + ", ".join(memory.coping_mechanisms[:2]))
+
+        if not parts:
+            return "We're still building our shared understanding."
+
+        return "; ".join(parts)
+
+    def _memory_highlight(self, memory: ContextualMemory) -> str:
+        """Return a single supportive sentence referencing stored memory."""
+        if not memory:
+            return ""
+
+        if memory.concerns:
+            latest = memory.concerns[-1]
+            topic = latest.get('topic', 'what you shared')
+            emotion = latest.get('emotion')
+            if emotion:
+                return f"I'm remembering that you mentioned feeling {emotion} about {topic}, and I'm keeping that in mind."
+            return f"I'm remembering what you shared about {topic}, and I'm keeping that in mind."
+
+        if memory.stressors:
+            category = next(iter(memory.stressors))
+            detail = memory.stressors[category][-1]
+            return f"I'm keeping in mind the {detail} you've been dealing with."
+
+        return ""
+
+    def _is_help_request(self, message: str) -> bool:
+        text = message.lower()
+        help_phrases = [
+            "help", "cope", "support", "advice", "tips", "strategies", "what should i do",
+            "how do i deal", "how can i feel better", "calm down", "meditation", "breathing", "relax"
+        ]
+        if any(phrase in text for phrase in help_phrases):
+            return True
+        return False
+
+    def _craft_help_response(
+        self,
+        context: ConversationContext,
+        memory: ContextualMemory,
+        memory_summary: str,
+        memory_highlight: str
+    ) -> str:
+        """Provide multi-sentence supportive guidance with coping tools."""
+        username = context.username or "there"
+        highlight = memory_highlight or "I'm holding onto everything you've shared so far."
+        suggestions = (
+            "We can try a slow breathing routine together, a short grounding meditation, or gentle stretches to release some tension."
+        )
+        extras = (
+            "If it helps, I can also walk you through journaling prompts or daily check-ins so you have a space to unload your thoughts."
+        )
+        report_line = (
+            "When you're ready, I can prepare a personalized summary report of our conversation that you can review or share with someone you trust."
+        )
+
+        if not memory_summary or "No detailed history" in memory_summary or "We're still" in memory_summary:
+            summary_phrase = "what you've been going through"
+        else:
+            summary_phrase = memory_summary
+
+        return (
+            f"Thank you for asking for support, {username}. {highlight} I'm paying attention to {summary_phrase} so our ideas fit what you're facing. "
+            f"{suggestions} {extras} {report_line}"
+        )
+
+    def _is_off_topic_question(self, message: str) -> bool:
+        text = message.strip().lower()
+        if not text:
+            return False
+
+        wellbeing_terms = [
+            'feel', 'feeling', 'stress', 'stressed', 'sad', 'anxious', 'anxiety', 'depress',
+            'lonely', 'cope', 'support', 'better', 'overwhelmed', 'worry', 'mental', 'help'
+        ]
+
+        if any(term in text for term in wellbeing_terms):
+            return False
+
+        knowledge_triggers = [
+            'when was', 'who is', 'what is', 'where is', 'tell me about', 'history of',
+            'define', 'explain', 'how many', 'capital of'
+        ]
+
+        if any(text.startswith(trigger) for trigger in knowledge_triggers):
+            return True
+
+        if '?' in text and any(trigger in text for trigger in knowledge_triggers):
+            return True
+
+        if text.startswith('tell me') and not any(term in text for term in wellbeing_terms):
+            return True
+
+        return False
+
+    def _handle_off_topic_question(
+        self,
+        message: str,
+        context: ConversationContext,
+        memory_summary: str,
+        memory_highlight: str
+    ) -> str:
+        """Set compassionate boundaries when conversation drifts off-topic."""
+        highlight = memory_highlight or "I'm keeping your earlier experiences in mind."
+        if not memory_summary or "No detailed history" in memory_summary or "We're still" in memory_summary:
+            summary_phrase = "everything you've been sharing"
+        else:
+            summary_phrase = memory_summary
+
+        return (
+            f"I totally get that questions like \"{message.strip()}\" can be interesting, but our space together is just for supporting your wellbeing. "
+            f"{highlight} I want to stay focused on how you're doing and what you need right now, especially given {summary_phrase}. "
+            "If that question popped up because something is on your mind, would you share a little about how you're feeling in this moment? "
+            "We can explore coping tools, grounding exercises, or even prepare your session summary whenever you're ready."
+        )
+
+    def _enforce_supportive_length(
+        self,
+        response: str,
+        context: ConversationContext,
+        memory: ContextualMemory
+    ) -> str:
+        """Ensure responses include at least three supportive sentences."""
+        if not response:
+            return response
+
+        rest = ""
+        main = response
+        if "\n" in response:
+            main, rest = response.split("\n", 1)
+
+        main = main.strip()
+        if not main:
+            main = "I'm right here with you, and I'm ready to listen whenever you're ready to share more."
+
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', main) if s.strip()]
+
+        highlight_sentence = self._memory_highlight(memory)
+        additions: List[str] = []
+
+        previous = (context.last_bot_message.split("\n", 1)[0].strip().lower() if context.last_bot_message else "")
+        if previous and sentences and sentences[0].lower() == previous:
+            additions.append("I want to keep building on what you've already shared so it feels like one caring conversation.")
+
+        if highlight_sentence and highlight_sentence not in sentences:
+            additions.append(highlight_sentence)
+
+        additions.extend([
+            "Your feelings matter to me, and I'm staying focused on supporting you.",
+            "We can take everything one step at a time, and I'm here for as long as you need.",
+            "If you'd ever like ideas like breathing exercises, gentle meditation, or journaling prompts, just let me know."
+        ])
+
+        seen = set(s.lower() for s in sentences)
+        for addition in additions:
+            if len(sentences) >= 4:
+                break
+            if addition and addition.lower() not in seen:
+                sentences.append(addition)
+                seen.add(addition.lower())
+            if len(sentences) >= 3:
+                break
+
+        while len(sentences) < 3:
+            fallback = "I'm staying here with you, and we can move at your pace."
+            if fallback.lower() not in seen:
+                sentences.append(fallback)
+                seen.add(fallback.lower())
+            else:
+                break
+
+        main_text = " ".join(sentences)
+        if rest:
+            return f"{main_text}\n{rest}"
+        return main_text
 
     def _fallback_topic_analysis(self, context: ConversationContext) -> str:
         """Fallback topic analysis using keyword patterns"""
@@ -1569,6 +1782,61 @@ class ClinicalAgentOrchestrator:
                         
                         logger.info(f"✅ Scored: {score} for {question['id']} (category: {category})")
         
+        # Memory summary for downstream use
+        memory_summary_text = self._format_memory_summary(memory)
+        memory_highlight = self._memory_highlight(memory)
+
+        # Offer direct support if user explicitly asks for help
+        if self._is_help_request(user_message):
+            bot_response = self._craft_help_response(context, memory, memory_summary_text, memory_highlight)
+            bot_response = self._enforce_supportive_length(bot_response, context, memory)
+            context.last_bot_message = bot_response
+            context.conversation_history.append({"role": "assistant", "content": bot_response})
+
+            return {
+                "bot_response": bot_response,
+                "phase_changed": False,
+                "question_asked": None,
+                "score_recorded": score_recorded,
+                "should_conclude": False,
+                "metadata": {
+                    "action": "support_resources",
+                    "target": "self_care",
+                    "phase": context.phase.value,
+                    "signal_analysis": signal_analysis,
+                    "decision_reasoning": "User explicitly requested support resources.",
+                    "category_scores": context.category_scores.copy(),
+                    "confidence": context.confidence_in_hypothesis,
+                    "memory_summary": self._get_memory_summary(memory),
+                    "memory_text": memory_summary_text
+                }
+            }
+
+        if self._is_off_topic_question(user_message):
+            bot_response = self._handle_off_topic_question(user_message, context, memory_summary_text, memory_highlight)
+            bot_response = self._enforce_supportive_length(bot_response, context, memory)
+            context.last_bot_message = bot_response
+            context.conversation_history.append({"role": "assistant", "content": bot_response})
+
+            return {
+                "bot_response": bot_response,
+                "phase_changed": False,
+                "question_asked": None,
+                "score_recorded": score_recorded,
+                "should_conclude": False,
+                "metadata": {
+                    "action": "boundary_reminder",
+                    "target": "wellbeing_focus",
+                    "phase": context.phase.value,
+                    "signal_analysis": signal_analysis,
+                    "decision_reasoning": "Maintained wellbeing boundaries for off-topic request.",
+                    "category_scores": context.category_scores.copy(),
+                    "confidence": context.confidence_in_hypothesis,
+                    "memory_summary": self._get_memory_summary(memory),
+                    "memory_text": memory_summary_text
+                }
+            }
+
         # 4. CONTEXT-AWARE REASONING (Enhanced with memory)
         decision = self.reasoner.reason_next_step(context, signal_analysis)
         
@@ -1595,7 +1863,7 @@ class ClinicalAgentOrchestrator:
         if action == "greet":
             # ✅ FIX: Use conversation_gen, not orchestrator
             bot_response = self.conversation_gen.generate_greeting(False, context.username)
-        
+
         elif action == "explore_concern":
             # Use AI to respond
             bot_response = conv_gen.generate_follow_up({
@@ -1603,9 +1871,11 @@ class ClinicalAgentOrchestrator:
                 'emotion_analysis': signal_analysis.get('emotional_tone', {}),
                 'conversation_history': context.conversation_history,
                 'username': context.username,
-                'empathy_level': 'high'
+                'empathy_level': 'high',
+                'memory_summary': memory_summary_text,
+                'memory_highlight': memory_highlight
             })
-        
+
         elif action == "explore_stressor":
             # Use AI to respond
             bot_response = conv_gen.generate_follow_up({
@@ -1613,9 +1883,11 @@ class ClinicalAgentOrchestrator:
                 'emotion_analysis': signal_analysis.get('emotional_tone', {}),
                 'conversation_history': context.conversation_history,
                 'username': context.username,
-                'empathy_level': 'high'
+                'empathy_level': 'high',
+                'memory_summary': memory_summary_text,
+                'memory_highlight': memory_highlight
             })
-        
+
         elif action == "explore_contextual":
             # Use AI
             bot_response = conv_gen.generate_follow_up({
@@ -1623,9 +1895,11 @@ class ClinicalAgentOrchestrator:
                 'emotion_analysis': signal_analysis.get('emotional_tone', {}),
                 'conversation_history': context.conversation_history,
                 'username': context.username,
-                'empathy_level': 'moderate'
+                'empathy_level': 'moderate',
+                'memory_summary': memory_summary_text,
+                'memory_highlight': memory_highlight
             })
-        
+
         elif action == "explore_topic":
             # Use AI
             bot_response = conv_gen.generate_follow_up({
@@ -1633,9 +1907,11 @@ class ClinicalAgentOrchestrator:
                 'emotion_analysis': signal_analysis.get('emotional_tone', {}),
                 'conversation_history': context.conversation_history,
                 'username': context.username,
-                'empathy_level': 'high' if signal_analysis.get('distress_detected') else 'moderate'
+                'empathy_level': 'high' if signal_analysis.get('distress_detected') else 'moderate',
+                'memory_summary': memory_summary_text,
+                'memory_highlight': memory_highlight
             })
-        
+
         elif action == "explore_general":
             # Use AI
             bot_response = conv_gen.generate_follow_up({
@@ -1643,9 +1919,11 @@ class ClinicalAgentOrchestrator:
                 'emotion_analysis': signal_analysis.get('emotional_tone', {}),
                 'conversation_history': context.conversation_history,
                 'username': context.username,
-                'empathy_level': 'high' if signal_analysis.get('distress_detected') else 'moderate'
+                'empathy_level': 'high' if signal_analysis.get('distress_detected') else 'moderate',
+                'memory_summary': memory_summary_text,
+                'memory_highlight': memory_highlight
             })
-        
+
         elif action == "wellness_chat":
             # Use AI
             bot_response = conv_gen.generate_follow_up({
@@ -1653,7 +1931,9 @@ class ClinicalAgentOrchestrator:
                 'emotion_analysis': signal_analysis.get('emotional_tone', {}),
                 'conversation_history': context.conversation_history,
                 'username': context.username,
-                'empathy_level': 'low'
+                'empathy_level': 'low',
+                'memory_summary': memory_summary_text,
+                'memory_highlight': memory_highlight
             })
         
         elif action == "screen_category":
@@ -1671,17 +1951,19 @@ class ClinicalAgentOrchestrator:
                     
                     # ✅ Build rich context to avoid repetition
                     ai_context = {
-                        'clinical_question': {
-                            'category': target,
-                            'text': question["text"],
-                            'options': question.get("options", [])
-                        },
-                        'conversation_history': context.conversation_history,
-                        'username': context.username,
-                        'empathy_level': 'high',
-                        'current_topic': self._get_current_focus_topic(context),  # Add this method
-                        'conversation_length': len(context.conversation_history)
-                    }
+                          'clinical_question': {
+                              'category': target,
+                              'text': question["text"],
+                              'options': question.get("options", [])
+                          },
+                          'conversation_history': context.conversation_history,
+                          'username': context.username,
+                          'empathy_level': 'high',
+                          'current_topic': self._get_current_focus_topic(context),  # Add this method
+                          'conversation_length': len(context.conversation_history),
+                          'memory_summary': memory_summary_text,
+                          'memory_highlight': memory_highlight
+                      }
                     
                     bot_response = conv_gen.refine_clinical_question(ai_context)
                     logger.info(f"💬 Refined clinical question: {bot_response}")
@@ -1720,7 +2002,7 @@ class ClinicalAgentOrchestrator:
             should_conclude = True
             context.concluded = True
             context.ready_to_conclude = True
-            
+
             # Determine severity
             if target == "wellness":
                 severity = "none"
@@ -1744,14 +2026,15 @@ class ClinicalAgentOrchestrator:
                 else:
                     severity = "none"
                     category = "wellness"
-            
+
             # ENHANCED: Conclusion with memory context
             bot_response = self._generate_contextual_conclusion(category, severity, context, memory)
-        
+
         # Update context
+        bot_response = self._enforce_supportive_length(bot_response, context, memory)
         context.last_bot_message = bot_response
         context.conversation_history.append({"role": "assistant", "content": bot_response})
-        
+
         return {
             "bot_response": bot_response,
             "phase_changed": phase_changed,
@@ -1766,7 +2049,8 @@ class ClinicalAgentOrchestrator:
                 "decision_reasoning": decision["reasoning"],
                 "category_scores": context.category_scores.copy(),
                 "confidence": context.confidence_in_hypothesis,
-                "memory_summary": self._get_memory_summary(memory)
+                "memory_summary": self._get_memory_summary(memory),
+                "memory_text": memory_summary_text
             }
         }
         

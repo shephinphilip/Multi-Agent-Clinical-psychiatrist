@@ -51,7 +51,9 @@ This is a safe, judgment-free space where you can share openly. Everything we di
         user_message = context.get('user_message', '')
         emotion_analysis = context.get('emotion_analysis', {})
         conversation_history = context.get('conversation_history', [])
-        
+        memory_summary = context.get('memory_summary') or "No detailed history captured yet."
+        memory_highlight = context.get('memory_highlight') or ""
+
         system_prompt = """You are Zen, a warm, empathetic companion AI. You're having a natural conversation with someone who may be going through difficult times.
 
 Your communication style:
@@ -60,7 +62,7 @@ Your communication style:
 - Use natural, conversational language
 - Avoid clinical jargon or sounding like a therapist
 - Show you're listening by reflecting what they've shared
-- Be concise - 1-2 sentences
+- Provide 3-4 sentences that acknowledge their situation and offer gentle reassurance
 - NEVER start every response with "It sounds like..." - vary your responses naturally
 
 Examples of natural responses:
@@ -80,7 +82,10 @@ Examples of natural responses:
 
 User just said: "{user_message}"
 
-Generate a brief, natural empathetic response (1-2 sentences). DO NOT ask a follow-up question - just acknowledge their feelings."""
+Key things to remember from our ongoing chat: {memory_summary}
+{f"Specific highlight: {memory_highlight}" if memory_highlight else ""}
+
+Generate a natural empathetic response in 3-4 sentences. Focus on acknowledging their feelings, referencing the memory information when it helps, and offer gentle reassurance without asking any follow-up questions."""
         
         try:
             response = self.client.chat.completions.create(
@@ -99,10 +104,14 @@ Generate a brief, natural empathetic response (1-2 sentences). DO NOT ask a foll
                 return content.strip()
             else:
                 # Handle empty response (e.g., return a default string)
-                return "Could you tell me more about yourself?"
+                return (
+                    "Thank you for sharing that with me. I can hear how much this matters to you, and I'm keeping our earlier conversation in mind as we talk. You're not alone in this space. I'm right here, staying with you while you work through these feelings."
+                )
         except Exception as e:
             logger.error(f"❌ Failed to generate empathetic response: {e}")
-            return "I hear you. That sounds really challenging."
+            return (
+                "I hear you, and I know this is heavy. I'm keeping what you've already shared in mind so you don't have to repeat yourself, and I want you to know your feelings are valid. We can take this one step at a time together. I'm staying right here with you."
+            )
     
     def refine_clinical_question(self, context: Dict) -> str:
         """Convert clinical question into natural conversation"""
@@ -469,16 +478,19 @@ Would you like to continue talking, or would you prefer to reach out to one of t
         """Generate natural follow-up based on user's response"""
         user_message = context.get('user_message', '')
         conversation_history = context.get('conversation_history', [])
-        
+
+        memory_summary = context.get('memory_summary') or "No detailed history captured yet."
+        memory_highlight = context.get('memory_highlight') or ""
+
         system_prompt = """You are Zen, responding naturally to what the user just shared.
 
-    Generate a brief follow-up that:
+    Generate a compassionate follow-up that:
     - Shows you're listening
-    - Digs a bit deeper naturally
-    - Asks an open-ended question
+    - Demonstrates you remember details from earlier in the conversation
+    - Digs a bit deeper naturally while keeping the focus on their wellbeing
+    - Asks an open-ended question that invites them to share more
     - Feels conversational, not interrogative
-
-    1-2 sentences max."""
+    - Delivers 3-4 sentences that remain warm and sympathetic"""
 
         # ✅ FIX: Use 'role' and 'content' instead of 'speaker' and 'message'
         recent_history = "\n".join([
@@ -491,7 +503,10 @@ Would you like to continue talking, or would you prefer to reach out to one of t
 
     User just said: "{user_message}"
 
-    Generate a natural follow-up:"""
+    Memory summary to reference naturally: {memory_summary}
+    {f"Highlight: {memory_highlight}" if memory_highlight else ""}
+
+    Generate a natural follow-up that is 3-4 sentences long, shows empathy, and gently guides them to share more."""
 
         try:
             response = self.client.chat.completions.create(
@@ -501,16 +516,20 @@ Would you like to continue talking, or would you prefer to reach out to one of t
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.8,
-                max_tokens=80
+                max_tokens=160
             )
             content = response.choices[0].message.content
-        
+
             if content is not None:
                 return content.strip()
             else:
-                return "Could you tell me more about yourself?"
-                
+                return (
+                    "Thank you for opening up about that. I remember what you mentioned earlier, and I'm holding onto those details so you don't have to repeat yourself. Could you share a bit more about how this is affecting you right now? I'm right here listening with you."
+                )
+
         except Exception as e:
             logger.error(f"❌ Failed to generate follow-up: {e}")
-            return "Can you tell me more about that?"
+            return (
+                "I really appreciate you telling me that. I'm keeping your earlier experiences in mind, and I want to understand this part of the story better. Would you feel comfortable sharing more about what's happening or how it's been affecting you? I'm right here with you."
+            )
         
