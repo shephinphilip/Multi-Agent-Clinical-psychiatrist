@@ -11,7 +11,6 @@ import logging
 from typing import Dict, Any, Tuple, List
 import asyncio
 from openai import AsyncOpenAI
-from empathy_agent import EmpathyAgent
 
 from services.zenark_db_cloud import (
     get_conversation_history,
@@ -36,7 +35,6 @@ class QuestionAgent:
 
     def __init__(self):
         self.agent_name = "QuestionAgent"
-        self.empathy_agent = EmpathyAgent()
         logger.info("💬 QuestionAgent (LLM) initialized successfully.")
 
     async def run(
