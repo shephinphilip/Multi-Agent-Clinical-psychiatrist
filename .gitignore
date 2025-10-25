@@ -1,0 +1,13 @@
+# 🧠 Python cache & environments
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# 🧰 Logs & temp files
+*.log
+*.tmp
+.DS_Store
+
+# 🧪 Local scripts not to push
+zenark_ai_simulator.py
