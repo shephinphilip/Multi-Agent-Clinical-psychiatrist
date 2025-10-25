@@ -11,6 +11,7 @@ import logging
 from typing import Dict, Any, Tuple, List
 import asyncio
 from openai import AsyncOpenAI
+from empathy_agent import EmpathyAgent
 
 from services.zenark_db_cloud import (
     get_conversation_history,
@@ -35,6 +36,7 @@ class QuestionAgent:
 
     def __init__(self):
         self.agent_name = "QuestionAgent"
+        self.empathy_agent = EmpathyAgent()
         logger.info("💬 QuestionAgent (LLM) initialized successfully.")
 
     async def run(
@@ -65,9 +67,10 @@ class QuestionAgent:
         ]
 
         memory_context = [
+            f"Name: {user_doc.get('name',f'{user_id}')}",
             f"User role: {user_doc.get('role', 'unknown')}",
-            f"Age Band: {user_doc.get('age_band', 'not specified')}",
-            f"Language: {user_doc.get('language', 'en')}",
+            f"Age Band: {user_doc.get('age_band', '10-20')}",
+            f"Language: {user_doc.get('language', 'Indian English')}",
         ]
 
         question_text = (nav_question.get("text") or "").strip()
@@ -80,7 +83,7 @@ class QuestionAgent:
         # ──────────────────────────────
         system_prompt = f"""
 You are Zen, a warm and empathetic AI companion helping users explore their emotions safely.
-Rephrase this clinical question empathetically for a 13-year-old adolescent.Keep its meaning the same, but make it sound supportive and natural.
+combine Empathy Reply  and  Base Question into a single, natural-sounding conversational style follow-up question.
 
 STRICT RULES:
 - Never use phrases like "It sounds like" or "You're going through a lot".
@@ -91,14 +94,11 @@ STRICT RULES:
 - Make it sound like a natural flow, not an interview.
 
 CONVERSATION HISTORY:
-{conversation_history[-3:] if conversation_history else 'Starting conversation'}
+{conversation_history[-5:] if conversation_history else 'Starting conversation'}
 
 USER PROFILE:
 {memory_context}
 
-CURRENT QUESTION CONTEXT:
-Category: {category}
-Intent: {intent}
 Empathy Reply: {empathy_tone}
 
 Your goal:
