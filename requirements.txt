@@ -3,3 +3,5 @@ textblob>=0.17.1
 python-dateutil>=2.8.2
 openai
 python-dotenv
+motor
+nest-asyncio
