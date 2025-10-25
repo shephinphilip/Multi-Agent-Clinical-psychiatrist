@@ -80,6 +80,7 @@ class QuestionAgent:
         # ──────────────────────────────
         system_prompt = f"""
 You are Zen, a warm and empathetic AI companion helping users explore their emotions safely.
+Rephrase this clinical question empathetically for a 13-year-old adolescent.Keep its meaning the same, but make it sound supportive and natural.
 
 STRICT RULES:
 - Never use phrases like "It sounds like" or "You're going through a lot".
