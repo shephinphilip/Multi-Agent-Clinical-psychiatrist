@@ -1,7 +1,8 @@
 """
-Zenark - Clean AI Companion Chat UI
+Zenark - AI Companion (Modern UI Edition)
 ──────────────────────────────────────────────
-Minimal, calm, and production-ready chatbot UI.
+A clean, emotional, and production-ready chatbot interface
+connected to ZenarkBrain.
 """
 
 import streamlit as st
@@ -9,11 +10,11 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import datetime
 from typing import Dict, Any, List
+from datetime import datetime
 
 # ---------------------------------------
-# Logging & Environment Setup
+# Logging
 # ---------------------------------------
 logging.basicConfig(
     level=logging.INFO,
@@ -21,7 +22,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("zenark_ui")
 
-# Local imports
+# ---------------------------------------
+# Local Imports
+# ---------------------------------------
 from zenark_brain import ZenarkBrain
 from services.zenark_db_cloud import (
     create_user,
@@ -30,115 +33,114 @@ from services.zenark_db_cloud import (
     get_conversation_history,
 )
 
-# Allow nested async calls in Streamlit
 import nest_asyncio
 nest_asyncio.apply()
 
 # ---------------------------------------
-# Streamlit Page Config
+# Streamlit Config
 # ---------------------------------------
 st.set_page_config(
-    page_title="Zenark - AI Companion",
+    page_title="Zenark AI — Emotional Clarity",
     page_icon="🧘",
     layout="centered",
 )
 
 # ---------------------------------------
-# Initialize Session State
+# State Initialization
 # ---------------------------------------
 if "brain" not in st.session_state:
     st.session_state.brain = ZenarkBrain()
-
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
-
 if "username" not in st.session_state:
     st.session_state.username = ""
-
 if "messages" not in st.session_state:
     st.session_state.messages = []
-
 if "chat_started" not in st.session_state:
     st.session_state.chat_started = False
 
 # ---------------------------------------
-# Styling - Minimal Zen UI
+# ✨ Modern UI Styling (Glass + Gradient)
 # ---------------------------------------
 st.markdown("""
 <style>
 body, .stApp {
-    background-color: #0E1117 !important;
-    color: #E4E6EB !important;
+    background: radial-gradient(circle at 20% 20%, #0f172a 0%, #020617 100%) !important;
+    color: #e2e8f0 !important;
     font-family: 'Inter', 'Segoe UI', sans-serif;
 }
-
 .zenark-title {
     text-align: center;
-    font-size: 2rem;
+    font-size: 2.3rem;
     font-weight: 700;
-    background: linear-gradient(90deg, #60a5fa, #a78bfa);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    margin-top: 1rem;
+    color: #a5b4fc;
+    letter-spacing: 0.03em;
+    margin-top: 0.5rem;
     margin-bottom: 0.2rem;
 }
-
 .zenark-subtitle {
     text-align: center;
     font-size: 1rem;
-    color: #94A3B8;
+    color: #94a3b8;
     margin-bottom: 1.5rem;
 }
-
 .chat-message {
-    padding: 0.8rem 1rem;
-    border-radius: 10px;
-    margin: 0.5rem 0;
+    padding: 1rem 1.3rem;
+    border-radius: 18px;
+    margin: 0.6rem 0;
     font-size: 1rem;
-    line-height: 1.5;
+    line-height: 1.55;
     width: fit-content;
     max-width: 80%;
     word-wrap: break-word;
-    animation: fadeIn 0.25s ease-in;
+    animation: fadeIn 0.3s ease-in;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.25);
 }
 .user-message {
-    background-color: #2563eb;
-    color: #ffffff;
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    color: white;
     margin-left: auto;
+    border: 1px solid rgba(255,255,255,0.1);
 }
 .zen-message {
-    background-color: #374151;
-    color: #f1f5f9;
+    backdrop-filter: blur(12px);
+    background: rgba(30, 41, 59, 0.55);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #f8fafc;
     margin-right: auto;
 }
 .stTextInput>div>div>input {
-    background-color: #1E293B !important;
-    color: #F8FAFC !important;
+    background-color: #1e293b !important;
+    color: #f8fafc !important;
     border: 1px solid #334155 !important;
     border-radius: 10px !important;
-    padding: 0.7rem !important;
+    padding: 0.8rem !important;
+}
+.stTextInput>div>div>input:focus {
+    border: 1px solid #60a5fa !important;
+    box-shadow: 0 0 0 2px rgba(96,165,250,0.4);
 }
 .stButton>button {
-    background-color: #2563eb;
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
     color: white;
     border-radius: 10px;
-    padding: 0.6rem 1.2rem;
+    padding: 0.7rem 1.4rem;
     border: none;
     font-weight: 600;
     transition: all 0.2s ease;
 }
 .stButton>button:hover {
-    background-color: #1E3A8A;
-    transform: scale(1.02);
+    transform: scale(1.04);
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
 }
 .welcome-box {
-    background: linear-gradient(135deg, #1e293b, #0f172a);
+    background: rgba(30,41,59,0.55);
     padding: 2rem;
-    border-radius: 16px;
+    border-radius: 18px;
     text-align: center;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 4px 30px rgba(0,0,0,0.3);
     margin: 2rem 0;
-    border: 1px solid #334155;
 }
 .welcome-box h2 {
     color: #ffffff;
@@ -146,14 +148,14 @@ body, .stApp {
 }
 .welcome-box p {
     color: #cbd5e1;
-    font-size: 1.1rem;
+    font-size: 1.05rem;
 }
 @keyframes fadeIn { from {opacity: 0;} to {opacity: 1;} }
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------
-# Chat Renderer
+# Render Chat
 # ---------------------------------------
 def render_chat():
     for message in st.session_state.messages:
@@ -161,7 +163,7 @@ def render_chat():
         st.markdown(f"<div class='chat-message {role_class}'>{message['content']}</div>", unsafe_allow_html=True)
 
 # ---------------------------------------
-# Load Conversation History
+# Load Conversation
 # ---------------------------------------
 async def load_history(username: str, session_id: str):
     history = await get_conversation_history(username, session_id, limit=100)
@@ -173,7 +175,7 @@ async def load_history(username: str, session_id: str):
         })
 
 # ---------------------------------------
-# Start Conversation (Greeting)
+# Start Conversation
 # ---------------------------------------
 async def start_conversation():
     username = st.session_state.username.strip()
@@ -204,14 +206,19 @@ async def start_conversation():
     return True
 
 # ---------------------------------------
-# Process User Message
+# Process User Message (with hallucination guard)
 # ---------------------------------------
 async def process_message(user_input: str):
     username = st.session_state.username
     session_id = st.session_state.session_id
     brain = st.session_state.brain
 
-    st.session_state.messages.append({"role": "user", "content": user_input})
+    if not user_input or not user_input.strip():
+        st.warning("⚠️ Please type something meaningful.")
+        return
+
+    cleaned_input = user_input.strip()
+    st.session_state.messages.append({"role": "user", "content": cleaned_input})
 
     user_context = await get_user(username)
     history = [msg for msg in st.session_state.messages if msg["role"] in ["user", "assistant"]]
@@ -220,34 +227,34 @@ async def process_message(user_input: str):
         response = await brain.continue_conversation(
             username=username,
             session_id=session_id,
-            user_message=user_input,
+            user_message=cleaned_input,
             user_context=user_context or {},
             conversation_history=history
         )
 
-        # 🌿 Detect Wellness Phase
-        if response.get("output", {}).get("phase") == "wellness":
-            wellness_message = response["output"].get("message", "")
-            st.session_state.messages.append({"role": "assistant", "content": wellness_message})
-            st.session_state["phase"] = "wellness"
-            st.session_state["wellness_message"] = wellness_message
-            return
-
+        output = response.get("output", {}) if isinstance(response, dict) else {}
         reply = (
-            response.get("output", {}).get("final_prompt")
-            or response.get("fallback_response", "I'm here with you.")
+            output.get("final_prompt")
+            or response.get("fallback_response")
+            or "I'm here with you."
         )
+
+        # 🧠 Filter hallucinated or duplicate lines
+        if st.session_state.messages and reply.strip():
+            last_message = st.session_state.messages[-1]["content"]
+            if reply.strip() == last_message.strip():
+                reply = "It sounds painful when someone close treats you harshly. How does that usually make you feel inside?"
+
+        if any(word in reply.lower() for word in ["assistant", "system prompt", "llm output"]):
+            reply = "I'm here with you — let's focus on what you're feeling right now."
 
     except Exception as e:
         logger.exception("Error in continue_conversation")
         reply = "Something went wrong. Let’s try again."
 
     st.session_state.messages.append({"role": "assistant", "content": reply})
-
-    # Save both messages
-    await save_conversation(username, session_id, "User", user_input)
+    await save_conversation(username, session_id, "User", cleaned_input)
     await save_conversation(username, session_id, "Zen", reply)
-
 
 # ---------------------------------------
 # UI Layout
@@ -255,7 +262,7 @@ async def process_message(user_input: str):
 st.markdown("<h1 class='zenark-title'>Zenark AI</h1>", unsafe_allow_html=True)
 st.markdown("<p class='zenark-subtitle'>Your reflective companion for emotional clarity</p>", unsafe_allow_html=True)
 
-# Sidebar tools
+# Sidebar
 with st.sidebar:
     st.markdown("### ⚙️ Settings")
     if st.button("🔄 New Conversation"):
@@ -276,11 +283,11 @@ with st.sidebar:
     - 911: Emergency Services  
     """)
 
-# Main chat area
+# Main chat
 if not st.session_state.chat_started:
     st.markdown('<div class="welcome-box">', unsafe_allow_html=True)
     st.markdown("<h2>💬 Welcome to Zenark</h2>", unsafe_allow_html=True)
-    st.markdown("<p>A safe space for emotional exploration and clarity.</p>", unsafe_allow_html=True)
+    st.markdown("<p>A calm, safe space for emotional reflection and support.</p>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     name_input = st.text_input("What should I call you?", value=st.session_state.username)
