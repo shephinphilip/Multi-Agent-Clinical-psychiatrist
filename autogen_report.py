@@ -4,6 +4,7 @@ import os, json, datetime
 from dotenv import load_dotenv
 
 load_dotenv()
+os.environ["AUTOGEN_USE_DOCKER"] = "0" 
 
 def generate_autogen_report(conversation_text: str, name: str):
     """Generate a multi-agent reflective report from conversation text."""

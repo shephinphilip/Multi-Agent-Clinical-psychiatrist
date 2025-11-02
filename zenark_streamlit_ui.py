@@ -1,6 +1,7 @@
 import streamlit as st
 from pymongo import MongoClient
 import os, json, datetime
+import json
 from dotenv import load_dotenv
 from autogen_report import generate_autogen_report
 from Zenark_Empathy import generate_response, save_conversation
@@ -70,16 +71,20 @@ elif page == "Empathy Chatbot":
     max_q = st.sidebar.selectbox("Maximum Questions", [5, 10, 15, 20], index=1)
     st.sidebar.info("Select how many questions you want to continue.")
 
-    # Initialize session state
     if "conversation" not in st.session_state:
         st.session_state.conversation = []
         st.session_state.q_count = 0
         st.session_state.finished = False
         st.session_state.name = st.session_state.get("student_name", "User")
+        st.session_state.initialized = False
 
-        # First generic AI message
-        first_msg = f"Hi {st.session_state.name}. What's your sweet name?"
+    # only show greeting after first render (prevents rerun race)
+    if not st.session_state.get("initialized"):
+        first_msg = f"Hi {st.session_state.name}. How are you feeling today? Is there anything on your mind that you'd like to talk about?"
         st.session_state.conversation.append({"ai": first_msg})
+        st.session_state.initialized = True
+        st.rerun()
+
 
 
     # Display chat history
@@ -93,30 +98,50 @@ elif page == "Empathy Chatbot":
     user_input = st.chat_input("Your response...")
 
     if user_input and not st.session_state.finished:
+        # --- Add & display user message immediately ---
         st.session_state.conversation.append({"user": user_input})
+        st.chat_message("user").write(user_input)
         st.session_state.q_count += 1
-
         # Generate AI response (LangChain backend)
         try:
-            ai_reply = generate_response(user_input, st.session_state.name)
+            ai_reply = generate_response(user_input, st.session_state.name, st.session_state.q_count + 1, max_q)
+
+
         except Exception as e:
             ai_reply = f"(Engine error: {str(e)})"
 
         st.session_state.conversation.append({"ai": ai_reply})
         st.chat_message("assistant").write(ai_reply)
 
-        # End conversation if reached max
+        # --- End conversation if reached max ---
         if st.session_state.q_count >= max_q:
             st.session_state.finished = True
-            goodbye = "That’s all for now. Thank you for sharing — take care."
+            goodbye = "That's all for now. Thank you for sharing — take care."
             st.chat_message("assistant").write(goodbye)
             st.session_state.conversation.append({"ai": goodbye})
-
-            # Save conversation
+            # Save conversation to DB
             save_conversation(st.session_state.conversation, st.session_state.name)
-            st.success("Conversation saved. Proceed to Report page.")
-            st.session_state["current_page"] = "AutoGen Report"
-            st.rerun()
+            st.success("Conversation saved successfully.")
+
+            # Convert to downloadable JSON
+            json_data = {
+                "name": st.session_state.name,
+                "conversation": st.session_state.conversation,
+                "timestamp": str(datetime.datetime.now())
+            }
+            json_str = json.dumps(json_data, ensure_ascii=False, indent=2)
+
+            # Let user download conversation as file
+            st.download_button(
+                label="⬇️ Download Conversation (JSON)",
+                data=json_str,
+                file_name=f"zenark_conversation_{st.session_state.name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json"
+            )
+
+            # Optionally suggest moving to report
+            st.info("You can now download your session or proceed to the AutoGen Report page.")
+
 
 
 # ======================================================================
