@@ -23,6 +23,7 @@ from langchain_openai import ChatOpenAI
 from langchain_openai.chat_models import ChatOpenAI
 from pymongo import MongoClient
 from typing import Optional
+import numpy as np
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -108,6 +109,18 @@ CONTEXT_AREAS = {
         "safe space", "trust", "guidance"
     ]
 }
+
+
+def safe_json(o):
+    """Convert non-serializable types to strings or lists."""
+    if isinstance(o, (datetime,)):
+        return o.isoformat()
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    if isinstance(o, bytes):
+        return o.decode("utf-8", errors="ignore")
+    return str(o)
+
 
 def get_user_marks(name: str | None, marks_col):
     """Fetch and format a student's marks from MongoDB."""
@@ -416,7 +429,7 @@ def save_conversation(conversation, user_name: str | None):
     fname = f"{user_name}_session_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     path = os.path.join(folder, fname)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(record, f, indent=2, ensure_ascii=False)
+        json.dump(record, f, indent=2, ensure_ascii=False, default=safe_json)
 
     print(f"✅ Conversation saved with emotion analysis → {path}")
     return record
