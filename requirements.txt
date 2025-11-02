@@ -16,3 +16,4 @@ pyautogen
 autogen
 torch
 transformers
+sentence-transformers
