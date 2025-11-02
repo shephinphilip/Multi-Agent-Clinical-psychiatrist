@@ -14,3 +14,4 @@ flaml[automl]
 langchain-huggingface
 pyautogen
 autogen
+torch
