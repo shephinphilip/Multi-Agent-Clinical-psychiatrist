@@ -1,14 +1,15 @@
 import streamlit as st
 from pymongo import MongoClient
-import os, json, datetime
-import json
+import os, json, datetime, requests
 from dotenv import load_dotenv
 from autogen_report import generate_autogen_report
-from Zenark_Empathy import generate_response, save_conversation
+import random
 
 # ========== ENVIRONMENT ==========
 load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI")
+FASTAPI_URL = os.getenv("FASTAPI_URL", "http://127.0.0.1:8000")  # default local server
+
 client = MongoClient(MONGO_URI)
 db = client["zenark_db"]
 marks_col = db["student_marks"]
@@ -38,12 +39,28 @@ if page == "Marks Entry":
     marks_data = []
 
     for sub in default_subjects:
-        marks = st.number_input(f"{sub} (out of 100)", min_value=0, max_value=100, step=1, key=sub)
+        # generate random marks between 60 and 100
+        random_marks = random.randint(60, 100)
+        marks = st.number_input(
+            f"{sub} (out of 100)",
+            min_value=0,
+            max_value=100,
+            step=1,
+            key=sub,
+            value=random_marks,          # 👈 prefilled random number
+        )
         marks_data.append({"subject": sub, "marks": marks})
 
     st.write("Add optional subject:")
     new_subject = st.text_input("Subject name")
-    new_marks = st.number_input("Marks (out of 100):", min_value=0, max_value=100, step=1, key="custom")
+    new_marks = st.number_input(
+        "Marks (out of 100):",
+        min_value=0,
+        max_value=100,
+        step=1,
+        key="custom",
+        value=random.randint(60, 100)   # 👈 also random for optional field
+    )
     if new_subject:
         marks_data.append({"subject": new_subject, "marks": new_marks})
 
@@ -62,12 +79,11 @@ if page == "Marks Entry":
 
 
 # ======================================================================
-# 2. EMPATHY CHATBOT (USES Zenark_Empathy.py)
+# 2. EMPATHY CHATBOT — NOW CONNECTED TO FASTAPI
 # ======================================================================
 elif page == "Empathy Chatbot":
-    st.title("🧠 Zenark Empathy Chatbot (LangChain Engine)")
+    st.title("🧠 Zenark Empathy Chatbot (API Connected)")
 
-    # Sidebar configuration
     max_q = st.sidebar.selectbox("Maximum Questions", [5, 10, 15, 20], index=1)
     st.sidebar.info("Select how many questions you want to continue.")
 
@@ -78,14 +94,14 @@ elif page == "Empathy Chatbot":
         st.session_state.name = st.session_state.get("student_name", "User")
         st.session_state.initialized = False
 
-    # only show greeting after first render (prevents rerun race)
     if not st.session_state.get("initialized"):
-        first_msg = f"Hi {st.session_state.name}. How are you feeling today? Is there anything on your mind that you'd like to talk about?"
+        first_msg = (
+            f"Hi {st.session_state.name}. How are you feeling today? "
+            "Is there anything on your mind that you'd like to talk about?"
+        )
         st.session_state.conversation.append({"ai": first_msg})
         st.session_state.initialized = True
         st.rerun()
-
-
 
     # Display chat history
     for turn in st.session_state.conversation:
@@ -94,44 +110,60 @@ elif page == "Empathy Chatbot":
         if "ai" in turn:
             st.chat_message("assistant").write(turn["ai"])
 
-    # Get user input
     user_input = st.chat_input("Your response...")
 
     if user_input and not st.session_state.finished:
-        # --- Add & display user message immediately ---
         st.session_state.conversation.append({"user": user_input})
         st.chat_message("user").write(user_input)
         st.session_state.q_count += 1
-        # Generate AI response (LangChain backend)
+
+        # Send to FastAPI backend
         try:
-            ai_reply = generate_response(user_input, st.session_state.name, st.session_state.q_count + 1, max_q)
-
-
+            payload = {
+                "text": user_input,
+                "name": st.session_state.name,
+                "question_index": st.session_state.q_count + 1,
+                "max_questions": max_q
+            }
+            response = requests.post(f"{FASTAPI_URL}/chat", json=payload, timeout=90)
+            if response.status_code == 200:
+                ai_reply = response.json().get("response", "(no response)")
+            else:
+                ai_reply = f"(Error {response.status_code}: {response.text})"
         except Exception as e:
-            ai_reply = f"(Engine error: {str(e)})"
+            ai_reply = f"(Engine error: {e})"
 
         st.session_state.conversation.append({"ai": ai_reply})
         st.chat_message("assistant").write(ai_reply)
 
-        # --- End conversation if reached max ---
+        # Finish and save conversation
         if st.session_state.q_count >= max_q:
             st.session_state.finished = True
             goodbye = "That's all for now. Thank you for sharing — take care."
-            st.chat_message("assistant").write(goodbye)
             st.session_state.conversation.append({"ai": goodbye})
-            # Save conversation to DB
-            save_conversation(st.session_state.conversation, st.session_state.name)
-            st.success("Conversation saved successfully.")
+            st.chat_message("assistant").write(goodbye)
 
-            # Convert to downloadable JSON
+            # Save conversation to backend
+            try:
+                save_payload = {
+                    "conversation": st.session_state.conversation,
+                    "name": st.session_state.name
+                }
+                save_res = requests.post(f"{FASTAPI_URL}/save_chat", json=save_payload, timeout=60)
+                if save_res.status_code == 200:
+                    st.success("Conversation saved successfully via API.")
+                else:
+                    st.error(f"Save failed: {save_res.status_code}")
+            except Exception as e:
+                st.error(f"Failed to save conversation: {e}")
+
+            # JSON download
             json_data = {
                 "name": st.session_state.name,
                 "conversation": st.session_state.conversation,
                 "timestamp": str(datetime.datetime.now())
             }
             json_str = json.dumps(json_data, ensure_ascii=False, indent=2)
-
-            # Let user download conversation as file
             st.download_button(
                 label="⬇️ Download Conversation (JSON)",
                 data=json_str,
@@ -139,9 +171,7 @@ elif page == "Empathy Chatbot":
                 mime="application/json"
             )
 
-            # Optionally suggest moving to report
-            st.info("You can now download your session or proceed to the AutoGen Report page.")
-
+            st.info("You can now download your session or go to AutoGen Report.")
 
 
 # ======================================================================

@@ -1,119 +1,368 @@
-#!pip install langchain langchain-core langchain-community==0.3.22 langchain-openai==0.2.0 faiss-cpu
-
-# ============================================================
-#  Child Adaptive RAG Chatbot with LangChain Memory Integration
-# ============================================================
-
-import re, random, datetime, torch
+# app.py
+import os, re, json, torch, datetime, logging, numpy as np
+from typing import Optional, List, Dict
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from dotenv import load_dotenv
+import datetime
+from pymongo import MongoClient
 from sklearn.metrics.pairwise import cosine_similarity
-from transformers import AutoTokenizer, AutoModel
-from transformers import pipeline
-from openai import OpenAI
-import os
-import json, os, datetime
-# LangChain imports
-from langchain.memory import ConversationSummaryMemory
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationalRetrievalChain
-from langchain.chains import ConversationChain
-from langchain_huggingface import HuggingFaceEmbeddings
+from transformers import (
+    AutoTokenizer,
+    AutoModel,
+    AutoModelForCausalLM,
+    pipeline
+)
 from huggingface_hub import login
+from langchain.tools import tool
+from langchain_classic.memory import (
+    ConversationSummaryBufferMemory,
+    ConversationBufferMemory,
+    CombinedMemory,
+)
+from langchain.agents import create_agent
+from langchain_core.messages import HumanMessage
+from langchain_community.document_loaders import JSONLoader
+from langchain_core.documents import Document
+from langchain_classic.chains import ConversationalRetrievalChain
+from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_community.embeddings import SentenceTransformerEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_openai import ChatOpenAI
-from langchain_openai.chat_models import ChatOpenAI
-from pymongo import MongoClient
-from typing import Optional
-import numpy as np
+from logging.handlers import RotatingFileHandler
 
-from dotenv import load_dotenv
+# ============================================================
+#  LOGGING CONFIGURATION
+# ============================================================
+LOG_DIR = "logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+log_file = os.path.join(LOG_DIR, "zenark_server.log")
+
+formatter = logging.Formatter(
+    fmt="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+file_handler = RotatingFileHandler(log_file, maxBytes=5_000_000, backupCount=5)
+file_handler.setFormatter(formatter)
+
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+
+import sys
+import logging
+
+sys.stdout.reconfigure(encoding='utf-8')
+logging.basicConfig(encoding='utf-8', level=logging.INFO)
+
+
+logger = logging.getLogger("zenark")
+logger.setLevel(logging.INFO)
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
+# ============================================================
+#  ENVIRONMENT + INITIALIZATION
+# ============================================================
 load_dotenv()
-
-llm =  ChatOpenAI(model="gpt-4o-mini",temperature=0.5)
-
-
-# ─────────────────────────────
-#  MONGODB CONNECTION
-# ─────────────────────────────
-MONGO_URI = os.getenv("MONGO_URI")
-client = MongoClient(MONGO_URI)
-db = client["zenark_db"]
-marks_col = db["student_marks"]
-chats_col = db["chat_sessions"]
 HF_TOKEN = os.getenv("HF_TOKEN")
+MONGO_URI = os.getenv("MONGO_URI")
 
+
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
+
+
+logger.info("Server startup initiated.")
+logger.info(f"Environment loaded. HF_TOKEN={'set' if HF_TOKEN else 'missing'} | MONGO_URI={'set' if MONGO_URI else 'missing'}")
+
+# ============================================================
+#  DATABASE CONNECTION
+# ============================================================
+try:
+    client = MongoClient(MONGO_URI)
+    db = client["zenark_db"]
+    marks_col = db["student_marks"]
+    chats_col = db["chat_sessions"]
+    logger.info("✅ MongoDB connection established.")
+except Exception as e:
+    logger.exception(f"❌ MongoDB connection failed: {e}")
+    raise
+
+# ============================================================
+#  HUGGINGFACE LOGIN
+# ============================================================
 if HF_TOKEN:
     try:
         login(token=HF_TOKEN)
-        print("✅ Logged into Hugging Face Hub successfully.")
+        logger.info("✅ Logged into Hugging Face Hub successfully.")
     except Exception as e:
-        print(f"⚠️ Hugging Face login failed: {e}")
+        logger.warning(f"⚠️ Hugging Face login failed: {e}")
 else:
-    print("⚠️ No HUGGINGFACE_TOKEN found in environment.")
+    logger.warning("⚠️ No HUGGINGFACE_TOKEN found in environment.")
 
+# ============================================================
+#  MODEL LOADING
+# ============================================================
+# MODEL_NAME = "arnir0/Tiny-LLM"
+# logger.info(f"Loading base model: {MODEL_NAME}")
+# tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+# model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
 
-# ─────────────────────────────
-#  LOAD MODELS
-# ─────────────────────────────
-embedder_tokenizer = AutoTokenizer.from_pretrained(
-    "sentence-transformers/all-MiniLM-L6-v2", token=HF_TOKEN
-)
-embedder_model = AutoModel.from_pretrained(
-    "sentence-transformers/all-MiniLM-L6-v2", token=HF_TOKEN
-)
+chat_history = ChatMessageHistory()
+
+def metadata_func(record: dict, metadata: dict) -> dict:
+    metadata["id"] = record.get("id")
+    metadata["category"] = record.get("category")
+    metadata["system_prompt"] = record.get("system_prompt")
+    return metadata
+
+def content_builder(record: dict) -> str:
+    """Combine key empathy fields into a unified text block."""
+    q = record.get("empathic_question", "")
+    r = record.get("empathic_response", "")
+    n = record.get("next_question", "")
+    return f"Empathic Question: {q}\nEmpathic Response: {r}\nNext Question: {n}"
+
+logger.info("Loading embedding models and emotion classifier...")
+embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 
 emotion_classifier = pipeline(
     "text-classification",
     model="j-hartmann/emotion-english-distilroberta-base",
     token=HF_TOKEN,
-    return_all_scores=True
+    top_k=None,
+)
+logger.info("All models successfully initialized.")
+
+
+
+
+def convert_objectid(doc):
+    """Recursively converts ObjectId to string for nested dicts/lists."""
+    if isinstance(doc, list):
+        return [convert_objectid(i) for i in doc]
+    elif isinstance(doc, dict):
+        return {k: convert_objectid(v) for k, v in doc.items()}
+    elif isinstance(doc, ObjectId):
+        return str(doc)
+    else:
+        return doc
+
+# ============================================================
+#  LOAD RAG DATASET
+# ============================================================
+DATA_PATH = "combined_dataset.json"
+
+# Load JSON correctly — note the path ".dataset[]"
+loader = JSONLoader(
+    file_path="combined_dataset.json",
+    jq_schema=".dataset[]",
+    content_key="empathic_question",  # temporary
+    metadata_func=metadata_func,
 )
 
-# ─────────────────────────────
-#  CONTEXT AREAS (from clinical guidelines)
-# ─────────────────────────────
-CONTEXT_AREAS = {
-    "family": [
-        "father", "mother", "parents", "siblings", "home",
-        "caretaker", "discipline", "attachment", "conflict"
-    ],
-    "school": [
-        "teacher", "exam", "homework", "study", "grades", "learning",
-        "attention", "classmates", "bullying", "school refusal"
-    ],
-    "peer_relations": [
-        "friends", "best friend", "play", "isolation", "group",
-        "social media", "peer pressure", "trust", "rejection"
-    ],
-    "developmental_history": [
-        "speech", "language", "toilet training", "temper tantrums",
-        "sleep patterns", "feeding habits", "milestones"
-    ],
-    "medical_physical": [
-        "illness", "pain", "fatigue", "sleep", "headache", "stomach",
-        "appetite", "energy", "body image"
-    ],
-    "emotional_functioning": [
-        "sad", "fear", "anger", "mood", "worry", "hopeless", "irritable",
-        "crying", "self-esteem"
-    ],
-    "environmental_stressors": [
-        "neighbour", "violence", "financial", "housing", "community",
-        "trauma", "migration", "loss"
-    ],
-    "cognitive_behavioral": [
-        "thinking", "focus", "memory", "concentration",
-        "obsession", "compulsion", "intrusive thoughts"
-    ],
-    "social_support": [
-        "friends", "relatives", "counsellor", "teacher support",
-        "safe space", "trust", "guidance"
-    ]
+raw_docs = loader.load()
+
+
+# Rebuild composite empathy text
+docs = []
+for d in raw_docs:
+    record = d.metadata
+    q = record.get("empathic_question", "")
+    r = record.get("empathic_response", "")
+    n = record.get("next_question", "")
+    combined_text = f"Empathic Question: {q}\nEmpathic Response: {r}\nNext Question: {n}"
+    docs.append(Document(page_content=combined_text, metadata=record))
+
+embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+
+vectorstore = FAISS.from_documents(docs, embedding_function)
+vectorstore.save_local("faiss_index")
+
+print(f"✅ Loaded {len(docs)} empathy records successfully.")
+
+# raw_docs = loader.load()
+
+# # Convert manually to LangChain Documents
+# from langchain_core.documents import Document
+
+# docs = [
+#     Document(
+#         page_content=f"{d.metadata.get('empathic_question', '')} {d.metadata.get('empathic_response', '')}",
+#         metadata={
+#             "category": d.metadata.get("category", ""),
+#             "system_prompt": d.metadata.get("system_prompt", "")
+#         }
+#     )
+#     for d in raw_docs
+# ]
+
+docs = loader.load()
+print(f"Loaded {len(docs)} empathy documents.")
+print(docs[0].page_content)
+print(docs[0].metadata)
+
+
+# ============================================================
+#  LANGCHAIN CORE
+# ============================================================
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+vectorstore = FAISS.from_documents(docs, embedding_function)
+vectorstore.save_local("faiss_zenark_index")
+print("✅ FAISS index built and saved with metadata.")
+buffer_memory = ConversationBufferMemory(
+    memory_key="chat_history",
+    input_key="question",
+    return_messages=True
+)
+
+summary_memory = ConversationSummaryBufferMemory(
+    llm=llm,
+    input_key="question",           # ✅ Explicitly add this
+    memory_key="summary",           # ✅ Give it a unique key
+    return_messages=True
+)
+
+combined_memory = CombinedMemory(
+    memories=[buffer_memory, summary_memory],
+    input_key="question"            # ✅ Force consistent input
+)
+
+retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+rag_chain = ConversationalRetrievalChain.from_llm(
+    llm=llm, retriever=retriever, memory=combined_memory
+)
+
+# ------------------------------------------------------------
+# Helper — Extract categories dynamically from dataset
+# ------------------------------------------------------------
+def extract_categories_from_json(file_path: str):
+    """Extract all unique categories from a JSON dataset file."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    records = data.get("dataset", data)
+    categories = sorted({item.get("category", "").strip() for item in records if "category" in item})
+    return categories
+
+# ------------------------------------------------------------
+# Tool 1 — Conversation history (context)
+# ------------------------------------------------------------
+@tool
+def get_conversation_history(history: str) -> str:
+    """Return the full conversation history for reasoning."""
+    return f"Conversation history:\n{history}"
+
+# ------------------------------------------------------------
+# Tool 2 — Fetch academic marks from MongoDB
+# ------------------------------------------------------------
+@tool
+def get_academic_marks(student_name: str) -> str:
+    """Retrieve academic marks from MongoDB for the given student."""
+    record = marks_col.find_one({"name": {"$regex": f"^{student_name}$", "$options": "i"}})
+    if not record:
+        return f"No marks found for {student_name}."
+
+    marks_list = record.get("marks", [])
+    formatted = ", ".join(f"{m['subject']}: {m['marks']}" for m in marks_list)
+    return f"Academic report for {student_name}: {formatted}"
+
+categories = extract_categories_from_json("combined_dataset.json")
+
+# ------------------------------------------------------------
+# Category + Academic Retrieval Agent
+# ------------------------------------------------------------
+category_agent = create_agent(
+    model="gpt-4o-mini",
+    tools=[get_conversation_history, get_academic_marks],
+    system_prompt=(
+        f"You are a clinical assistant analyzing adolescent conversations.\n"
+        f"Use the `get_conversation_history` tool to review context.\n"
+        f"Classify the conversation into one of the categories:\n"
+        f"{categories}.\n"
+        f"If the topic mentions school, teachers, study, or exams, also call `get_academic_marks` "
+        f"to fetch the student's marks from the database using their name.\n"
+        f"Output the result as JSON:\n"
+        f"{{'category': '<category>', 'marks': '<marks or None>'}}"
+    ),
+)
+
+# ============================================================
+#  IMPORT GUIDELINES
+# ============================================================
+from Guideliness import (
+    action_cognitive_guidelines,
+    action_emotional_guidelines,
+    action_developmental_guidelines,
+    action_environmental_guidelines,
+    action_family_guidelines,
+    action_medical_guidelines,
+    action_peer_guidelines,
+    action_school_guidelines,
+    action_social_support_guidelines,
+)
+
+GUIDELINES = {
+    "family_issues": f"{action_family_guidelines}",
+    "school_stress": f"{action_school_guidelines}",
+    "peer_issues": f"{action_peer_guidelines}",
+    "developmental_details": f"{action_developmental_guidelines}",
+    "medical_complaint": f"{action_medical_guidelines}",
+    "emotional_distress": f"{action_emotional_guidelines}",
+    "environmental_stress": f"{action_environmental_guidelines}",
+    "cognitive_concern": f"{action_cognitive_guidelines}",
+    "social_support": f"{action_social_support_guidelines}",
+}
+
+# Complete mapping for all your dataset categories
+CATEGORY_MAP = {
+    # Map exact category names from your dataset to guideline keys
+    "anxiety": "emotional_distress",
+    "bipolar": "emotional_distress", 
+    "depression": "emotional_distress",
+    "emotional_functioning": "emotional_distress",
+    "environmental_stressors": "environmental_stress",
+    "family": "family_issues",  # ✅ Fixed: was "family_conflict"
+    "ocd": "emotional_distress",
+    "peer_relations": "peer_issues",  # ✅ This one was correct
+    "ptsd": "emotional_distress",
+    
+    # Keep your existing mappings for backward compatibility
+    "school_stress": "school",
+    "developmental": "developmental",
+    "medical": "medical",
+    "emotional_distress": "emotional",
+    "environmental": "environmental",
+    "cognitive": "cognitive",
+    "social_support": "support",
 }
 
 
+
+CORPUS = [
+    f"{getattr(d, 'metadata', {}).get('category', '')} | "
+    f"{getattr(d, 'metadata', {}).get('system_prompt', '')} "
+    f"{getattr(d, 'page_content', '')}"
+    for d in docs
+]
+
+
+
+CORPUS_EMB = torch.tensor(
+    np.array([embedding_function.embed_query(text) for text in CORPUS])
+)
+logger.info("Corpus embeddings prepared.")
+
+# ============================================================
+#  HELPERS
+# ============================================================
 def safe_json(o):
-    """Convert non-serializable types to strings or lists."""
-    if isinstance(o, (datetime,)):
+    if isinstance(o, (datetime.datetime,)):
         return o.isoformat()
     if isinstance(o, np.ndarray):
         return o.tolist()
@@ -122,362 +371,220 @@ def safe_json(o):
     return str(o)
 
 
-def get_user_marks(name: str | None, marks_col):
-    """Fetch and format a student's marks from MongoDB."""
-    record = marks_col.find_one({"name": name})
-    if not record or not record.get("marks"):
-        return None
-    marks_text = "\n".join([f"{m['subject']}: {m['marks']}/100" for m in record["marks"]])
-    avg = sum(m["marks"] for m in record["marks"]) / len(record["marks"])
-    return f"{marks_text}\nAverage: {avg:.1f}/100"
+def retrieve_context(query, top_k=3, threshold=0.25):
+    # Get embedding and ensure it's a NumPy array
+    q_emb = np.array(embedding_function.embed_query(query)).reshape(1, -1)
 
-
-def analyze_marks_for_prompt(name: str):
-    """Generate a gentle follow-up prompt if marks are low."""
-    record = marks_col.find_one({"name": name})
-    if not record or not record.get("marks"):
-        return ""
-
-    low_subjects = [m["subject"] for m in record["marks"] if m["marks"] < 50]
-    if not low_subjects:
-        return ""
-
-    subjects_list = ", ".join(low_subjects)
-    return (
-        f"It seems {name} has scored relatively low marks in {subjects_list}. "
-        "Ask gently if there were any particular difficulties, distractions, or worries affecting study time."
+    # Compute cosine similarity
+    corpus_matrix = (
+        CORPUS_EMB.numpy() if hasattr(CORPUS_EMB, "numpy") else np.array(CORPUS_EMB)
     )
+    sims = cosine_similarity(q_emb, corpus_matrix)[0]
 
-def analyze_emotions(conversation):
-    """Return emotion analysis for each user message in the conversation."""
-    analyzed = []
-    for turn in conversation:
-        if "user" in turn:
-            text = turn["user"]
-            try:
-                scores = emotion_classifier(text)
-                analyzed.append({"text": text, "emotions": scores})
-            except Exception as e:
-                analyzed.append({"text": text, "error": str(e)})
-    return analyzed
-
-
-# ─────────────────────────────
-#  TOPIC TRACKER
-# ─────────────────────────────
-class TopicTracker:
-    def __init__(self):
-        self.last_area = None
-        self.repeat_count = 0
-    def detect_area(self, text):
-        """
-        Detects the dominant context area from user text.
-        Priority: family > school > peer_relations > emotional_functioning > others
-        """
-        t = text.lower().strip()
-
-        # --- FAMILY CONTEXT ---
-        family_keywords = [
-            "father", "mother", "dad", "mom", "parents", "brother", "sister",
-            "home", "house", "family", "discipline", "argue", "fight", "beat",
-            "shout", "yell", "scold", "care", "love", "support"
-        ]
-        if any(k in t for k in family_keywords):
-            return "family"
-
-        # --- SCHOOL CONTEXT ---
-        school_keywords = [
-            "teacher", "school", "exam", "homework", "class", "subject",
-            "study", "grades", "marks", "result", "report card", "principal",
-            "homework", "assignment", "tutor", "lecture", "college"
-        ]
-        if any(k in t for k in school_keywords):
-            return "school"
-
-        # --- PEER RELATIONS CONTEXT ---
-        peer_keywords = [
-            "friend", "friends", "best friend", "classmates", "group",
-            "peer", "play", "bully", "tease", "ignore", "talk to", "alone",
-            "rejected", "social", "party", "hangout"
-        ]
-        if any(k in t for k in peer_keywords):
-            return "peer_relations"
-
-        # --- EMOTIONAL FUNCTIONING CONTEXT ---
-        emotional_keywords = [
-            "sad", "angry", "upset", "scared", "fear", "depressed",
-            "happy", "lonely", "cry", "hopeless", "worthless",
-            "anxious", "panic", "frustrated", "nervous", "tired"
-        ]
-        if any(k in t for k in emotional_keywords):
-            return "emotional_functioning"
-
-        # --- MEDICAL / PHYSICAL CONTEXT ---
-        medical_keywords = [
-            "headache", "stomach", "sick", "pain", "injury", "tired",
-            "sleep", "fatigue", "ill", "medicine", "doctor", "health"
-        ]
-        if any(k in t for k in medical_keywords):
-            return "medical_physical"
-
-        # --- ENVIRONMENTAL / STRESSOR CONTEXT ---
-        environmental_keywords = [
-            "money", "financial", "neighbour", "noise", "move", "migration",
-            "violence", "accident", "loss", "death", "disaster", "community",
-            "problem at home", "problem in area"
-        ]
-        if any(k in t for k in environmental_keywords):
-            return "environmental_stressors"
-
-        # --- COGNITIVE / BEHAVIORAL CONTEXT ---
-        cognitive_keywords = [
-            "focus", "concentrate", "memory", "think", "thoughts",
-            "obsess", "compulsion", "forget", "attention", "mind"
-        ]
-        if any(k in t for k in cognitive_keywords):
-            return "cognitive_behavioral"
-
-        # --- SOCIAL SUPPORT CONTEXT ---
-        social_keywords = [
-            "counsellor", "teacher support", "relative", "friend help",
-            "safe", "guidance", "trust", "mentor", "support", "help me"
-        ]
-        if any(k in t for k in social_keywords):
-            return "social_support"
-
-        # --- DEVELOPMENTAL HISTORY CONTEXT ---
-        developmental_keywords = [
-            "childhood", "speech", "language", "feeding", "sleep pattern",
-            "milestone", "toilet training", "growth", "temper tantrum"
-        ]
-        if any(k in t for k in developmental_keywords):
-            return "developmental_history"
-
-        # --- DEFAULT FALLBACK ---
-        return "other"
-
-    def update(self, text):
-        area = self.detect_area(text)
-        if area == self.last_area:
-            self.repeat_count += 1
-        else:
-            self.repeat_count = 1
-            self.last_area = area
-        return area, self.repeat_count
-
-tracker = TopicTracker()
-
-# ─────────────────────────────
-#  EMBEDDING MODEL
-# ─────────────────────────────
-tok = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-mdl = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-
-def embed_texts(texts):
-    toks = tok(texts, padding=True, truncation=True, return_tensors="pt")
-    with torch.no_grad():
-        out = mdl(**toks)
-        return out.last_hidden_state.mean(dim=1).numpy()
-
-# ─────────────────────────────
-#  BUILD RAG CONTEXT
-#  (load your empathic JSON dataset before running)
-# ─────────────────────────────
-import json
-DATA_PATH = "combined_dataset.json"
-
-with open(DATA_PATH, "r", encoding="utf-8") as f:
-    DATA = json.load(f)["dataset"]
-
-CORPUS, META = [], []
-for d in DATA:
-    text = f"{d['category']} | {d['system_prompt']} {d['empathic_response']} {d['empathic_question']} {d['next_question']}"
-    CORPUS.append(text)
-    META.append(d)
-
-CORPUS_EMB = embed_texts(CORPUS)
-
-def retrieve_context(query, top_k=3):
-    q_emb = embed_texts([query])
-    sims = cosine_similarity(q_emb, CORPUS_EMB)[0]
     idxs = sims.argsort()[-top_k:][::-1]
-    return [META[i] for i in idxs]
+    results = [(CORPUS[i], sims[i]) for i in idxs if sims[i] >= threshold]
+    return [r[0] for r in results]
 
-# ─────────────────────────────
-#  LANGCHAIN MEMORY INTEGRATION
-# ─────────────────────────────
-embedder = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-vectorstore = FAISS.from_texts(["start"], embedder)
+def generate_fallback_response(prompt: str) -> str:
+    """Generate response directly using LLM when RAG fails."""
+    try:
+        # Use a simple direct LLM call as fallback
+        from langchain.chat_models import ChatOpenAI
+        from langchain.schema import HumanMessage
+        
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+        message = HumanMessage(content=prompt)
+        response = llm.invoke([message])
+        return response.content if hasattr(response, 'content') else str(response)
+        
+    except Exception as e:
+        logger.error(f"Fallback response also failed: {e}")
+        return "I hear this is really challenging for you. Would you like to talk more about what's been going on?"
 
-summary_memory = ConversationSummaryMemory(
-    llm=ChatOpenAI(model="gpt-4o-mini"),
-    input_key="question"  # <── crucial line
-)
-buffer_memory = ConversationBufferMemory(return_messages=True)
 
-retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-rag_chain = ConversationalRetrievalChain.from_llm(
-    ChatOpenAI(model="gpt-4o-mini", temperature=0.7),
-    retriever=retriever,
-    memory=summary_memory
-)
+# ============================================================
+#  CORE RESPONSE LOGIC - Fixed Import Version
+# ============================================================
+def generate_response(user_text: str, name: Optional[str] = None, question_index=1, max_questions=10):
+    start_time = datetime.datetime.now()
+    logger.info(f"Generating response | user={name or 'Unknown'} | text='{user_text[:80]}'")
 
-# ─────────────────────────────
-#  RESPONSE GENERATOR
-# ─────────────────────────────
-def generate_response(user_text: str, name: str | None, question_index=1, max_questions=10):
-    """
-    Generate an empathetic AI response using LangChain and adaptive context.
-    Integrates academic marks when discussion relates to school or studies.
-    """
     if not user_text:
         return "Could you share a bit more about how you're feeling?"
 
-    # --- Context detection ---
-    area = tracker.detect_area(user_text)
-    all_areas = list(CONTEXT_AREAS.keys())
-    next_index = (question_index - 1) % len(all_areas)
-    current_area = all_areas[next_index]
-    keywords = ", ".join(CONTEXT_AREAS.get(current_area, [])[:5])
+    chat_history.add_user_message(user_text)
 
-    # --- Base tone setup ---
-    progress_ratio = question_index / max_questions
-    tone_note = (
-        f"You are {int(progress_ratio*100)}% through the conversation. "
-        "Early stages should sound exploratory, later stages more reflective."
-    )
-
-    # --- Academic context injection ---
-    if area == "school" or any(k in user_text.lower() for k in ["exam", "study", "marks", "grade"]):
-        marks_info = get_user_marks(name or "", marks_col)
-        if marks_info:
-            marks_context = f"\nHere are {name}'s current marks:\n{marks_info}\n"
-        else:
-            marks_context = f"\nNo stored marks found for {name}.\n"
+    # ------------------------------------------------------------
+    # Step 1: Simple classification
+    # ------------------------------------------------------------
+    text_lower = user_text.lower()
+    if any(word in text_lower for word in ["parent", "mom", "dad", "family"]):
+        category = "family"
+    elif any(word in text_lower for word in ["friend", "peer", "buddy"]):
+        category = "peer_relations"
+    elif any(word in text_lower for word in ["school", "teacher", "exam"]):
+        category = "environmental_stressors"
     else:
-        marks_context = ""
+        category = "emotional_functioning"
 
-    # --- Construct the adaptive prompt ---
-    combined_prompt = f"""
-You are an empathetic counselor for adolescents aged 10–17.
+    # ------------------------------------------------------------
+    # Step 2: Build natural prompt
+    # ------------------------------------------------------------
+    history_text = "\n".join(
+        [f"User: {m.content}" if m.type == "human" else f"You: {m.content}" for m in chat_history.messages[-4:]]
+    )
+    
+    progress = int((question_index / max_questions) * 100)
+    
+    prompt = f"""
+You're having a warm, natural conversation with a teenager who's opening up about personal struggles.
 
-Conversation focus: {current_area}
-Detected theme: {area}
-Keywords: {keywords}
-{tone_note}
-{marks_context}
+Context: They're discussing {category} issues. 
 
-Child said: "{user_text}"
+Recent conversation:
+{history_text}
 
-Respond with one compassionate reflection and one follow-up question related to the above focus.
-If marks context is provided, discuss their performance gently — acknowledge effort, avoid blame.
+They just said: "{user_text}"
+
+Respond naturally like a caring adult who's genuinely interested:
+- Show empathy and understanding
+- Ask open-ended questions to learn more  
+- Connect with their emotions
+- Keep it conversational, not clinical
+- Sound like a real person, not a robot
+
+Respond in a warm, natural way:
 """
-    try:
-        result = rag_chain.invoke({"question": combined_prompt, "chat_history": []})
-        response = result.get("answer", "") if isinstance(result, dict) else str(result)
-    except Exception as e:
-        response = f"(Engine error: {str(e)})"
+    
+    logger.info(f"Natural conversation prompt:\n{prompt}")
 
-    if not isinstance(response, str):
-        response = str(response)
+    # ------------------------------------------------------------
+    # Step 3: Generate response (FIXED IMPORT)
+    # ------------------------------------------------------------
+    try:
+        # Try the most common import patterns
+        try:
+            from langchain_openai import ChatOpenAI
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.8)
+            response_obj = llm.invoke([HumanMessage(content=prompt)])
+            response = response_obj.content
+        except ImportError:
+            try:
+                from langchain.chat_models import ChatOpenAI
+                llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.8)
+                response_obj = llm.invoke([HumanMessage(content=prompt)])
+                response = response_obj.content
+            except ImportError:
+                # Fallback to direct OpenAI API
+                import openai
+                response = openai.ChatCompletion.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.8
+                ).choices[0].message.content
+        
+    except Exception as e:
+        logger.exception(f"LLM error: {e}")
+        response = "That sounds really challenging. I'm here to listen if you want to share more."
+
+    # ------------------------------------------------------------
+    # Step 4: Store and return
+    # ------------------------------------------------------------
+    chat_history.add_ai_message(response)
+    elapsed = (datetime.datetime.now() - start_time).total_seconds()
+    
+    logger.info(f"Response generated | category={category} | progress={progress}%")
     return response.strip()
 
 
 
-# ─────────────────────────────
-#  SAVE CHAT TO MONGODB
-# ─────────────────────────────
-def save_conversation(conversation, user_name: str | None):
+
+def save_conversation(conversation, user_name: Optional[str]):
+    logger.info(f"Saving conversation for user={user_name}")
     analyzed_conversation = []
     for turn in conversation:
         if "user" in turn:
             text = turn["user"]
             try:
                 scores = emotion_classifier(text)
-                if isinstance(scores, list) and len(scores) > 0 and isinstance(scores[0], list):
+                # Flatten the list if nested
+                if isinstance(scores, list) and isinstance(scores[0], list):
                     scores = scores[0]
-
-                if isinstance(scores, list):
-                    emotion_dict = {}
-                    for item in scores:
-                        if isinstance(item, dict):
-                            label = str(item.get("label", "unknown"))
-                            val = item.get("score", 0.0)
-                            try:
-                                emotion_dict[label] = round(float(val), 4)
-                            except (TypeError, ValueError):
-                                emotion_dict[label] = 0.0
-                    turn["emotion_scores"] = emotion_dict
-                else:
-                    turn["emotion_scores"] = {"error": str(scores)}
-
+                emotion_dict = {item["label"]: round(float(item["score"]), 4) for item in scores}
+                turn["emotion_scores"] = emotion_dict
             except Exception as e:
+                logger.warning(f"Emotion classification failed: {e}")
                 turn["emotion_scores"] = {"error": str(e)}
+
         analyzed_conversation.append(turn)
 
     record = {
         "name": user_name or "Unknown",
         "conversation": analyzed_conversation,
-        "timestamp": datetime.datetime.now()
+        "timestamp": datetime.datetime.now(),
     }
 
-    chats_col.insert_one(record)
+    try:
+        chats_col.insert_one(record)
+    except Exception as e:
+        logger.exception(f"Mongo insert failed: {e}")
 
-    # Optional local backup for JSON download
     folder = "chat_sessions"
     os.makedirs(folder, exist_ok=True)
-    fname = f"{user_name}_session_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    path = os.path.join(folder, fname)
+    path = os.path.join(folder, f"{user_name}_session_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(record, f, indent=2, ensure_ascii=False, default=safe_json)
-
-    print(f"✅ Conversation saved with emotion analysis → {path}")
+    logger.info(f"Conversation persisted to {path}")
     return record
 
+# ============================================================
+#  FASTAPI APP
+# ============================================================
+app = FastAPI(title="Zenark Mental Health API", version="2.0", description="Empathetic AI counseling system with detailed logging.")
 
+class ChatRequest(BaseModel):
+    text: str
+    name: Optional[str] = None
+    question_index: int = 1
+    max_questions: int = 10
 
+class SaveRequest(BaseModel):
+    conversation: List[Dict]
+    name: Optional[str] = None
 
-# ─────────────────────────────
-#  MAIN CHAT LOOP
-# ─────────────────────────────
-def run_chat():
-    print("=== Child Adaptive RAG Mental Health Chat (with Memory) ===")
-    print("Type 'exit' to stop manually.\n")
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = datetime.datetime.now()
+    logger.info(f"Request start | {request.method} {request.url.path}")
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        logger.exception(f"Unhandled error during {request.url.path}: {e}")
+        return JSONResponse(status_code=500, content={"error": "Internal Server Error"})
+    duration = (datetime.datetime.now() - start).total_seconds()
+    logger.info(f"Request end | {request.method} {request.url.path} | {duration:.2f}s | Status={response.status_code}")
+    return response
 
-    conversation = []
-    max_questions = 10 #for testing purpose we reduced from 30 to 10
-    question_count = 0
+@app.get("/health")
+def health_check():
+    logger.info("Health check pinged.")
+    return {"status": "ok", "time": datetime.datetime.now().isoformat()}
 
-    while True:
-        user = input("You: ").strip()
-        if not user:
-            continue
-        if user.lower() == "exit":
-            print("\nAI: That’s okay! We can stop anytime. Take care and remember, you matter.\n")
-            break
+@app.post("/chat")
+def chat_endpoint(req: ChatRequest):
+    response = generate_response(req.text, req.name, req.question_index, req.max_questions)
+    logger.info(f"Chat response returned to user={req.name}")
+    return {"response": response}
 
-        reply = generate_response(user, name=None)
-        question_count += 1
-        conversation.append({"user": user, "ai": reply})
-        print(f"\nAI: {reply}\n")
+@app.post("/save_chat")
+async def save_chat_endpoint(request: Request):
+    data = await request.json()
+    result = mongo_collection.insert_one(data)
 
-        if question_count >= max_questions:
-            goodbye_msg = (
-                "We’ve talked about a lot today. "
-                "Let’s take a pause for now — I really enjoyed hearing from you. "
-                "Remember, you’re doing your best, and that matters. "
-                "Goodbye for now, and take care of yourself."
-            )
-            print(f"\nAI: {goodbye_msg}\n")
-            conversation.append({"ai": goodbye_msg})
-            break
+    # Prepare response
+    saved_doc = {**data, "_id": result.inserted_id}
+    safe_doc = convert_objectid(saved_doc)
 
-    return conversation
-
-
-# # ─────────────────────────────
-# #  RUN
-# # ─────────────────────────────
-# if __name__ == "__main__":
-#     convo = run_chat()
-#     save_conversation(convo)
+    return JSONResponse(content=jsonable_encoder(safe_doc))
+# Run with:
+# uvicorn app:app --reload
