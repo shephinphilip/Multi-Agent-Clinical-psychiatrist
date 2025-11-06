@@ -34,6 +34,17 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_openai import ChatOpenAI
 from logging.handlers import RotatingFileHandler
+from fastapi.middleware.cors import CORSMiddleware
+
+
+app = FastAPI(title="Zenark Mental Health API", version="2.0", description="Empathetic AI counseling system with detailed logging.")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # or ["http://localhost:8501"] if you want to restrict
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ============================================================
 #  LOGGING CONFIGURATION
@@ -611,3 +622,7 @@ async def save_chat_endpoint(request: Request):
     return JSONResponse(content=jsonable_encoder(safe_doc))
 # Run with:
 # uvicorn app:app --reload
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("Zenark_Empathy:app", host="0.0.0.0", port=8000, reload=True)
