@@ -37,14 +37,14 @@ from logging.handlers import RotatingFileHandler
 from fastapi.middleware.cors import CORSMiddleware
 
 
-app = FastAPI(title="Zenark Mental Health API", version="2.0", description="Empathetic AI counseling system with detailed logging.")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # or ["http://localhost:8501"] if you want to restrict
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app = FastAPI(title="Zenark Mental Health API", version="2.0", description="Empathetic AI counseling system with detailed logging.")
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],  # or ["http://localhost:8501"] if you want to restrict
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 # ============================================================
 #  LOGGING CONFIGURATION
@@ -433,95 +433,63 @@ def generate_response(user_text: str, name: Optional[str] = None, question_index
 
     chat_history.add_user_message(user_text)
 
-    # ------------------------------------------------------------
-    # Step 1: Simple classification
-    # ------------------------------------------------------------
     text_lower = user_text.lower()
-    if any(word in text_lower for word in ["parent", "mom", "dad", "family"]):
+    if any(w in text_lower for w in ["parent", "mom", "dad", "family"]):
         category = "family"
-    elif any(word in text_lower for word in ["friend", "peer", "buddy"]):
+    elif any(w in text_lower for w in ["friend", "peer", "buddy"]):
         category = "peer_relations"
-    elif any(word in text_lower for word in ["school", "teacher", "exam"]):
+    elif any(w in text_lower for w in ["school", "teacher", "exam"]):
         category = "environmental_stressors"
     else:
         category = "emotional_functioning"
 
-    # ------------------------------------------------------------
-    # Step 2: Build natural prompt
-    # ------------------------------------------------------------
     history_text = "\n".join(
         [f"User: {m.content}" if m.type == "human" else f"You: {m.content}" for m in chat_history.messages[-4:]]
     )
-    
     progress = int((question_index / max_questions) * 100)
-    
+
     prompt = f"""
 You're having a warm, natural conversation with a teenager who's opening up about personal struggles.
-
-Context: They're discussing {category} issues. 
-
+Context: They're discussing {category} issues.
 Recent conversation:
 {history_text}
-
 They just said: "{user_text}"
 
 Respond naturally like a caring adult who's genuinely interested:
 - Show empathy and understanding
-- Ask open-ended questions to learn more  
-- Connect with their emotions
+- Ask open-ended questions
 - Keep it conversational, not clinical
-- Sound like a real person, not a robot
-
-Respond in a warm, natural way:
 """
-    
-    logger.info(f"Natural conversation prompt:\n{prompt}")
+
+    logger.info("Prompt constructed successfully.")
 
     # ------------------------------------------------------------
-    # Step 3: Generate response (FIXED IMPORT)
+    # Core model call
     # ------------------------------------------------------------
     try:
-        # Try the most common import patterns
-        try:
-            from langchain_openai import ChatOpenAI
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.8)
-            response_obj = llm.invoke([HumanMessage(content=prompt)])
-            response = response_obj.content
-        except ImportError:
-            try:
-                llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.8)
-                response_obj = llm.invoke([HumanMessage(content=prompt)])
-                response = response_obj.content
-            except ImportError:
-                # Fallback to direct OpenAI API
-                import openai
-                client = openai.Client(api_key=os.getenv("OPENAI_API_KEY"))
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.8
-                ).choices[0].message.content
-        
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.8)
+        response_obj = llm.invoke([HumanMessage(content=prompt)])
+        response = getattr(response_obj, "content", None)
     except Exception as e:
         logger.exception(f"LLM error: {e}")
+        response = None
+
+    # ------------------------------------------------------------
+    # Guarantee a valid string return
+    # ------------------------------------------------------------
+    if not response:
         response = "That sounds really challenging. I'm here to listen if you want to share more."
 
-       # ------------------------------------------------------------
-        # Step 4: Store and return
-        # ------------------------------------------------------------
-        # Normalize response to a guaranteed string
-        if isinstance(response, list):
-            response = " ".join(str(getattr(r, "content", r)) for r in response)
-        elif response is None:
-            response = ""
-        elif not isinstance(response, str):
-            response = str(getattr(response, "content", response))
+    if isinstance(response, list):
+        response = " ".join(str(getattr(r, "content", r)) for r in response)
+    elif not isinstance(response, str):
+        response = str(response)
 
-        chat_history.add_ai_message(response)
-        elapsed = (datetime.datetime.now() - start_time).total_seconds()
+    chat_history.add_ai_message(response)
+    elapsed = (datetime.datetime.now() - start_time).total_seconds()
+    logger.info(f"Response generated | category={category} | progress={progress}% | time={elapsed:.2f}s")
+    return response.strip()
 
-        logger.info(f"Response generated | category={category} | progress={progress}% | time={elapsed:.2f}s")
-        return response.strip()
 
 
 def save_conversation(conversation, user_name: Optional[str]):
@@ -569,11 +537,6 @@ def save_conversation(conversation, user_name: Optional[str]):
     logger.info(f"Conversation persisted to {path}")
     return record
 
-# ============================================================
-#  FASTAPI APP
-# ============================================================
-app = FastAPI(title="Zenark Mental Health API", version="2.0", description="Empathetic AI counseling system with detailed logging.")
-
 class ChatRequest(BaseModel):
     text: str
     name: Optional[str] = None
@@ -584,7 +547,7 @@ class SaveRequest(BaseModel):
     conversation: List[Dict]
     name: Optional[str] = None
 
-@app.middleware("http")
+# @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = datetime.datetime.now()
     logger.info(f"Request start | {request.method} {request.url.path}")
@@ -597,18 +560,18 @@ async def log_requests(request: Request, call_next):
     logger.info(f"Request end | {request.method} {request.url.path} | {duration:.2f}s | Status={response.status_code}")
     return response
 
-@app.get("/health")
+# @app.get("/health")
 def health_check():
     logger.info("Health check pinged.")
     return {"status": "ok", "time": datetime.datetime.now().isoformat()}
 
-@app.post("/chat")
+# @app.post("/chat")
 def chat_endpoint(req: ChatRequest):
     response = generate_response(req.text, req.name, req.question_index, req.max_questions)
     logger.info(f"Chat response returned to user={req.name}")
     return {"response": response}
 
-@app.post("/save_chat")
+# @app.post("/save_chat")
 async def save_chat_endpoint(request: Request):
     data = await request.json()
     
@@ -623,6 +586,6 @@ async def save_chat_endpoint(request: Request):
 # Run with:
 # uvicorn app:app --reload
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("Zenark_Empathy:app", host="0.0.0.0", port=8000, reload=True)
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run("Zenark_Empathy:app", host="0.0.0.0", port=8000, reload=True)
