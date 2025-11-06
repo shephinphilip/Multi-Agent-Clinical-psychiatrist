@@ -15,6 +15,7 @@ from transformers import (
     pipeline
 )
 from huggingface_hub import login
+from bson import ObjectId
 from langchain.tools import tool
 from langchain_classic.memory import (
     ConversationSummaryBufferMemory,
@@ -22,6 +23,7 @@ from langchain_classic.memory import (
     CombinedMemory,
 )
 from langchain.agents import create_agent
+from fastapi.encoders import jsonable_encoder
 from langchain_core.messages import HumanMessage
 from langchain_community.document_loaders import JSONLoader
 from langchain_core.documents import Document
@@ -54,7 +56,9 @@ console_handler.setFormatter(formatter)
 import sys
 import logging
 
-sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+
 logging.basicConfig(encoding='utf-8', level=logging.INFO)
 
 
@@ -89,7 +93,7 @@ try:
     chats_col = db["chat_sessions"]
     logger.info("✅ MongoDB connection established.")
 except Exception as e:
-    logger.exception(f"❌ MongoDB connection failed: {e}")
+    logger.exception(f"MongoDB connection failed: {e}")
     raise
 
 # ============================================================
@@ -223,14 +227,12 @@ buffer_memory = ConversationBufferMemory(
 
 summary_memory = ConversationSummaryBufferMemory(
     llm=llm,
-    input_key="question",           # ✅ Explicitly add this
     memory_key="summary",           # ✅ Give it a unique key
     return_messages=True
 )
 
 combined_memory = CombinedMemory(
-    memories=[buffer_memory, summary_memory],
-    input_key="question"            # ✅ Force consistent input
+    memories=[buffer_memory, summary_memory]            # ✅ Force consistent input
 )
 
 retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
@@ -386,20 +388,26 @@ def retrieve_context(query, top_k=3, threshold=0.25):
     return [r[0] for r in results]
 
 def generate_fallback_response(prompt: str) -> str:
-    """Generate response directly using LLM when RAG fails."""
+    """Generate response directly using LLM when RAG fails. Always returns a string."""
     try:
-        # Use a simple direct LLM call as fallback
-        from langchain.chat_models import ChatOpenAI
-        from langchain.schema import HumanMessage
-        
         llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
         message = HumanMessage(content=prompt)
         response = llm.invoke([message])
-        return response.content if hasattr(response, 'content') else str(response)
-        
+
+        # Normalize all possible return types to string
+        if isinstance(response, str):
+            return response
+        if hasattr(response, "content"):
+            return str(response.content)
+        if isinstance(response, list):
+            return " ".join(str(getattr(r, "content", r)) for r in response)
+        return str(response)
+
     except Exception as e:
         logger.error(f"Fallback response also failed: {e}")
-        return "I hear this is really challenging for you. Would you like to talk more about what's been going on?"
+        return (
+            "I hear this is really challenging for you. Would you like to talk more about what's been going on?"
+        )
 
 
 # ============================================================
@@ -470,14 +478,14 @@ Respond in a warm, natural way:
             response = response_obj.content
         except ImportError:
             try:
-                from langchain.chat_models import ChatOpenAI
                 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.8)
                 response_obj = llm.invoke([HumanMessage(content=prompt)])
                 response = response_obj.content
             except ImportError:
                 # Fallback to direct OpenAI API
                 import openai
-                response = openai.ChatCompletion.create(
+                client = openai.Client(api_key=os.getenv("OPENAI_API_KEY"))
+                response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.8
@@ -487,16 +495,22 @@ Respond in a warm, natural way:
         logger.exception(f"LLM error: {e}")
         response = "That sounds really challenging. I'm here to listen if you want to share more."
 
-    # ------------------------------------------------------------
-    # Step 4: Store and return
-    # ------------------------------------------------------------
-    chat_history.add_ai_message(response)
-    elapsed = (datetime.datetime.now() - start_time).total_seconds()
-    
-    logger.info(f"Response generated | category={category} | progress={progress}%")
-    return response.strip()
+       # ------------------------------------------------------------
+        # Step 4: Store and return
+        # ------------------------------------------------------------
+        # Normalize response to a guaranteed string
+        if isinstance(response, list):
+            response = " ".join(str(getattr(r, "content", r)) for r in response)
+        elif response is None:
+            response = ""
+        elif not isinstance(response, str):
+            response = str(getattr(response, "content", response))
 
+        chat_history.add_ai_message(response)
+        elapsed = (datetime.datetime.now() - start_time).total_seconds()
 
+        logger.info(f"Response generated | category={category} | progress={progress}% | time={elapsed:.2f}s")
+        return response.strip()
 
 
 def save_conversation(conversation, user_name: Optional[str]):
@@ -510,7 +524,14 @@ def save_conversation(conversation, user_name: Optional[str]):
                 # Flatten the list if nested
                 if isinstance(scores, list) and isinstance(scores[0], list):
                     scores = scores[0]
-                emotion_dict = {item["label"]: round(float(item["score"]), 4) for item in scores}
+                emotion_dict = {}
+                for item in scores:
+                    if isinstance(item, dict):
+                        label = str(item.get("label", "unknown"))
+                        score = round(float(item.get("score", 0.0)), 4)
+                        emotion_dict[label] = score
+                turn["emotion_scores"] = emotion_dict
+
                 turn["emotion_scores"] = emotion_dict
             except Exception as e:
                 logger.warning(f"Emotion classification failed: {e}")
@@ -579,7 +600,9 @@ def chat_endpoint(req: ChatRequest):
 @app.post("/save_chat")
 async def save_chat_endpoint(request: Request):
     data = await request.json()
-    result = mongo_collection.insert_one(data)
+    
+    # use your defined Mongo collection
+    result = chats_col.insert_one(data)
 
     # Prepare response
     saved_doc = {**data, "_id": result.inserted_id}
