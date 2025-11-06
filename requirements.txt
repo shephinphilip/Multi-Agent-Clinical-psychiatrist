@@ -17,3 +17,9 @@ autogen
 torch
 transformers
 sentence-transformers
+fastapi
+uvicorn
+pydantic
+sentencepiece
+protobuf
+jq
