@@ -23,3 +23,4 @@ pydantic
 sentencepiece
 protobuf
 jq
+langchain-classic

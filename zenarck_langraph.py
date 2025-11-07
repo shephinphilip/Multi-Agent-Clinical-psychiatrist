@@ -31,14 +31,14 @@ from langgraph.graph import StateGraph, END
 import operator
 from autogen_report import generate_autogen_report
 
-app = FastAPI(title="Zenark Mental Health API", version="2.0", description="Empathetic AI counseling system with detailed logging.")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # or ["http://localhost:8501"]
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app = FastAPI(title="Zenark Mental Health API", version="2.0", description="Empathetic AI counseling system with detailed logging.")
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],  # or ["http://localhost:8501"]
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 # ============================================================
 #  LOGGING CONFIGURATION (Unchanged)
@@ -486,7 +486,7 @@ Respond naturally (80-120 words):
 - Highlight strengths and habits they can continue.
 - Keep tone light, friendly, motivational, affirmational.
 
-Always include Zenark’s Zen Mode mindfulness suggestion in every case, tailored to the user's current emotional state:
+Suggest the user to use zenark's mindfulness meditation or music or breathing exercises, tailored to the user's current emotional state:
 - For high stress/anxiety: "Try a 5-minute deep breathing exercise to calm your
 mind."
 - For sadness/depression: "Take a moment to list three things you're grateful for today."
@@ -688,92 +688,101 @@ def save_conversation(conversation, user_name: Optional[str], session_id: str = 
     return convert_objectid(record)  # Safe for JSON
 
 
-# ============================================================
-#  SCHEMAS
-# ============================================================
-class ChatRequest(BaseModel):
-    text: str
-    name: Optional[str] = None
-    question_index: int = 1
-    max_questions: int = 5  # Updated default to 5
-    session_id: str = "default"  # New: for per-session memory
+def generate_report(name: str):
+    record = db["chat_sessions"].find_one({"name": name}, sort=[("_id", -1)])
+    if not record:
+        return {"error": f"No conversation found for {name}"}
+    conv_text = "\n".join(f"User: {t.get('user','')}\nAI: {t.get('ai','')}" for t in record.get("conversation", []))
+    report_data = generate_autogen_report(conv_text, name)
+    reports_col.insert_one(report_data)
+    return report_data
 
-class SaveRequest(BaseModel):
-    conversation: List[Dict]
-    name: Optional[str] = None
-    session_id: str = "default"
+# # ============================================================
+# #  SCHEMAS
+# # ============================================================
+# class ChatRequest(BaseModel):
+#     text: str
+#     name: Optional[str] = None
+#     question_index: int = 1
+#     max_questions: int = 5  # Updated default to 5
+#     session_id: str = "default"  # New: for per-session memory
+
+# class SaveRequest(BaseModel):
+#     conversation: List[Dict]
+#     name: Optional[str] = None
+#     session_id: str = "default"
 
 
-class ReportRequest(BaseModel):
-    name: str
+# class ReportRequest(BaseModel):
+#     name: str
 
 
 # ============================================================
 #  MIDDLEWARE & ENDPOINTS
 # ============================================================
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    start = datetime.datetime.now()
-    logger.info(f"Request start | {request.method} {request.url.path}")
-    try:
-        response = await call_next(request)
-    except Exception as e:
-        logger.exception(f"Unhandled error during {request.url.path}: {e}")
-        return JSONResponse(status_code=500, content={"error": "Internal Server Error"})
-    duration = (datetime.datetime.now() - start).total_seconds()
-    logger.info(f"Request end | {request.method} {request.url.path} | {duration:.2f}s | Status={response.status_code}")
-    return response
+# @app.middleware("http")
+# async def log_requests(request: Request, call_next):
+#     start = datetime.datetime.now()
+#     logger.info(f"Request start | {request.method} {request.url.path}")
+#     try:
+#         response = await call_next(request)
+#     except Exception as e:
+#         logger.exception(f"Unhandled error during {request.url.path}: {e}")
+#         return JSONResponse(status_code=500, content={"error": "Internal Server Error"})
+#     duration = (datetime.datetime.now() - start).total_seconds()
+#     logger.info(f"Request end | {request.method} {request.url.path} | {duration:.2f}s | Status={response.status_code}")
+#     return response
 
-@app.get("/health")
-def health_check():
-    logger.info("Health check pinged.")
-    return {"status": "ok", "time": datetime.datetime.now().isoformat()}
+# @app.get("/health")
+# def health_check():
+#     logger.info("Health check pinged.")
+#     return {"status": "ok", "time": datetime.datetime.now().isoformat()}
 
-@app.post("/chat")
-def chat_endpoint(req: ChatRequest):
-    safe_name = req.name or "Unknown"  # Handle None for logging
-    response = generate_response(req.text, req.name, req.question_index, req.max_questions, req.session_id)
-    logger.info(f"Chat response returned to user={safe_name} | session={req.session_id}")
-    return {"response": response}
+# @app.post("/chat")
+# def chat_endpoint(req: ChatRequest):
+#     safe_name = req.name or "Unknown"  # Handle None for logging
+#     response = generate_response(req.text, req.name, req.question_index, req.max_questions, req.session_id)
+#     logger.info(f"Chat response returned to user={safe_name} | session={req.session_id}")
+#     return {"response": response}
 
-@app.post("/save_chat")
-def save_chat_endpoint(req: SaveRequest):
-    record = save_conversation(req.conversation, req.name, req.session_id)
-    return JSONResponse(content=jsonable_encoder(record))
+# @app.post("/save_chat")
+# def save_chat_endpoint(req: SaveRequest):
+#     record = save_conversation(req.conversation, req.name, req.session_id)
+#     return JSONResponse(content=jsonable_encoder(record))
 
 
-@app.post("/generate_report")
-def generate_report_endpoint(req: ReportRequest):
-    """Generate and store a multi-agent reflective report from user's latest conversation."""
-    try:
-        record = db["chat_sessions"].find_one({"name": req.name}, sort=[("_id", -1)])
-        if not record or "conversation" not in record:
-            return JSONResponse(status_code=404, content={"error": f"No conversation found for {req.name}"})
+# @app.post("/generate_report")
+# def generate_report_endpoint(req: ReportRequest):
+#     """Generate and store a multi-agent reflective report from user's latest conversation."""
+#     try:
+#         record = db["chat_sessions"].find_one({"name": req.name}, sort=[("_id", -1)])
+#         if not record or "conversation" not in record:
+#             return JSONResponse(status_code=404, content={"error": f"No conversation found for {req.name}"})
 
-        conv_text = []
-        for t in record["conversation"]:
-            user_msg = t.get("user", "")
-            ai_msg = t.get("ai", "")
-            if user_msg or ai_msg:
-                conv_text.append(f"User: {user_msg}\nAI: {ai_msg}")
-        conv_text = "\n".join(conv_text)
+#         conv_text = []
+#         for t in record["conversation"]:
+#             user_msg = t.get("user", "")
+#             ai_msg = t.get("ai", "")
+#             if user_msg or ai_msg:
+#                 conv_text.append(f"User: {user_msg}\nAI: {ai_msg}")
+#         conv_text = "\n".join(conv_text)
 
-        report_data = generate_autogen_report(conv_text, req.name)
-        insert_result = reports_col.insert_one(report_data)
-        report_data["_id"] = insert_result.inserted_id
+#         report_data = generate_autogen_report(conv_text, req.name)
+#         insert_result = reports_col.insert_one(report_data)
+#         report_data["_id"] = insert_result.inserted_id
 
-        # Convert ObjectId -> str before returning
-        safe_report = convert_objectid(report_data)
-        return JSONResponse(content=safe_report)
+#         # Convert ObjectId -> str before returning
+#         safe_report = convert_objectid(report_data)
+#         return JSONResponse(content=safe_report)
 
-    except Exception as e:
-        logger.exception(f"Report generation failed: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+#     except Exception as e:
+#         logger.exception(f"Report generation failed: {e}")
+#         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 # ============================================================
 #  MAIN ENTRYPOINT
 # ============================================================
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True, log_config=None)
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True, log_config=None)
