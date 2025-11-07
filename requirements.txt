@@ -13,3 +13,5 @@ torch
 transformers
 sentence-transformers
 scikit-learn
+pyautogen 
+autogen
