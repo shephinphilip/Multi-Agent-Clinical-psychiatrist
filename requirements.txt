@@ -23,4 +23,4 @@ pydantic
 sentencepiece
 protobuf
 jq
-langchain-classic
+langchain_classic>=0.0.6
