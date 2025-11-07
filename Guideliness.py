@@ -18,11 +18,11 @@ What to Do
 
 8. Adolescents often experience conflict as part of identity formation. Normalize moderate disagreement as developmental while differentiating it from abuse, neglect, or emotional control.
 
-9. Observe how parental substance use, marital discord, or economic strain affects the adolescent’s symptoms. Incorporate psychoeducation and family stress-management work where appropriate.
+9. Observe how parental substance use, marital discord, or economic strain affects the adolescent's symptoms. Incorporate psychoeducation and family stress-management work where appropriate.
 
 What Not to Do
 
-1. Avoid revealing the adolescent’s private disclosures to parents unless required for safety. Breaching trust undermines therapeutic alliance and reduces honesty in future sessions
+1. Avoid revealing the adolescent's private disclosures to parents unless required for safety. Breaching trust undermines therapeutic alliance and reduces honesty in future sessions
 
 2. Distinguish normative generational conflict (e.g., arguments about independence or discipline) from maladaptive emotional abuse or neglect.
 
@@ -44,7 +44,7 @@ What Not to Do
 """
 
 action_school_guidelines = """
-School is the most revealing social and cognitive environment for a child. It mirrors self-esteem, motivation, peer adjustment, and executive functioning. When psychiatrists explore school topics, the goal is not academic correction but emotional mapping — to understand how learning and social experience reflect the child’s mental state.
+School is the most revealing social and cognitive environment for a child. It mirrors self-esteem, motivation, peer adjustment, and executive functioning. When psychiatrists explore school topics, the goal is not academic correction but emotional mapping — to understand how learning and social experience reflect the child's mental state.
 
 1. Ask about school life before probing for problems. Example: “Tell me what a normal school day feels like for you.” This establishes a baseline and lowers defensiveness.
 
@@ -82,7 +82,7 @@ Falling grades after stressor → grief, adjustment disorder, or family instabil
 Evaluate class size, curriculum pressure, teacher approach, and online learning demands. Environmental overload can mimic psychiatric symptoms.
 
 7. Normalize and Contain Shame
-Children equate academic failure with personal inadequacy. Use language separating behavior from identity (“You seem to be struggling with focus” instead of “You’re careless”).
+Children equate academic failure with personal inadequacy. Use language separating behavior from identity (“You seem to be struggling with focus” instead of “You're careless”).
 
 8. Assess Coping and Support Systems
 Ask who the child turns to for help — teacher, parent, friend. Lack of academic support amplifies hopelessness and anxiety.
@@ -131,7 +131,7 @@ Anchor each observation to function and well-being, not to institutional success
 """
 
 action_peer_guidelines= """
-Peer relationships are the emotional mirror of a child’s social development. They reveal how the child perceives belonging, empathy, self-worth, and safety. Disturbances in this area often signal depression, anxiety, trauma, or social communication disorders. The psychiatrist’s task is to decode how the child connects, withdraws, or performs socially, not merely whether they have friends.
+Peer relationships are the emotional mirror of a child's social development. They reveal how the child perceives belonging, empathy, self-worth, and safety. Disturbances in this area often signal depression, anxiety, trauma, or social communication disorders. The psychiatrist's task is to decode how the child connects, withdraws, or performs socially, not merely whether they have friends.
 
 What to Do
 
@@ -142,7 +142,7 @@ Start with neutral questions about shared activities or group interactions (“W
 Ask about number of friends, but focus on quality: trust, emotional closeness, loyalty, and conflict resolution. Having many peers but no confidant suggests social quantity without emotional connection.
 
 3. Assess Emotional Reciprocity and Empathy
-Notice whether the child describes mutual care (“we help each other”) or one-sided relationships (“I always listen, they don’t”). Deficits may indicate depressive detachment, social anxiety, or autistic-spectrum difficulties.
+Notice whether the child describes mutual care (“we help each other”) or one-sided relationships (“I always listen, they don't”). Deficits may indicate depressive detachment, social anxiety, or autistic-spectrum difficulties.
 
 4. Identify Peer Group Dynamics
 Explore how the child positions themselves within a group — leader, follower, outsider, observer. Observe for narratives of dominance, fear, or exclusion.
@@ -157,7 +157,7 @@ Ask indirectly about influence (“What do friends usually do when someone disag
 Rejection experiences can lead to internalized shame, social anxiety, or anger dysregulation. Evaluate emotional intensity following minor social disappointments.
 
 8. Include Digital and Social Media Behavior
-Discuss online interactions — followers, messaging, comparison habits, or cyberbullying. The psychiatrist must explore digital identity’s emotional impact: validation-seeking, exposure, or harassment.
+Discuss online interactions — followers, messaging, comparison habits, or cyberbullying. The psychiatrist must explore digital identity's emotional impact: validation-seeking, exposure, or harassment.
 
 9. Assess Trust Formation
 Ask who the child confides in and whether they feel safe doing so. Difficulties forming trust may trace back to trauma, inconsistent caregiving, or chronic peer betrayal.
@@ -177,13 +177,13 @@ III. What Not to Do
 Solitude or small friend circles can be normal. Diagnose only when isolation leads to suffering, impaired function, or distorted self-image.
 
 2. Do Not Minimize Peer Rejection
-Even seemingly minor exclusion (“they didn’t invite me”) can deeply wound self-esteem. Avoid rationalizing it as normal school conflict.
+Even seemingly minor exclusion (“they didn't invite me”) can deeply wound self-esteem. Avoid rationalizing it as normal school conflict.
 
 3. Do Not Encourage Forced Socialization
 Pushing a socially anxious or traumatized child into peer groups prematurely may reinforce fear and humiliation. Gradual exposure with skill training is safer.
 
 4. Do Not Pathologize All Online Interaction
-Digital communication can be adaptive. Evaluate how it’s used — not merely its presence — before assuming dysfunction.
+Digital communication can be adaptive. Evaluate how it's used — not merely its presence — before assuming dysfunction.
 
 5. Do Not Assume Parent Reports Reflect Peer Reality
 Parents often underestimate loneliness or misinterpret online relationships. Base conclusions on child narratives and observable affect.
@@ -198,7 +198,7 @@ IV. Clinical Orientation
 
 Goal: Understand the emotional architecture of belonging — connection, safety, rejection, and resilience.
 
-Tone: Empathic neutrality — avoid cheerleading or alarm. Let the child’s language set the emotional temperature.
+Tone: Empathic neutrality — avoid cheerleading or alarm. Let the child's language set the emotional temperature.
 
 Framework: Integrate findings into broader diagnostic formulation (mood, anxiety, trauma, or neurodevelopmental spectrum).
 
@@ -206,9 +206,9 @@ Follow-Up: Reassess peer narratives periodically; improvement in relational conf
 """
 
 action_developmental_guidelines = """
-Developmental history reveals the trajectory of a child’s brain–behavior relationship — how biology, environment, and temperament interact over time. In psychiatric evaluation, it identifies neurodevelopmental vulnerabilities (autism, ADHD, learning disorders), early relational disruptions (insecure attachment, trauma), and early regulatory difficulties (sleep, feeding, toileting) that shape emotional resilience and behavior.
+Developmental history reveals the trajectory of a child's brain-behavior relationship — how biology, environment, and temperament interact over time. In psychiatric evaluation, it identifies neurodevelopmental vulnerabilities (autism, ADHD, learning disorders), early relational disruptions (insecure attachment, trauma), and early regulatory difficulties (sleep, feeding, toileting) that shape emotional resilience and behavior.
 
-The aim is to reconstruct the child’s early developmental rhythm — not to interrogate parents for errors, but to understand patterns of regulation, attachment, and adaptation.
+The aim is to reconstruct the child's early developmental rhythm — not to interrogate parents for errors, but to understand patterns of regulation, attachment, and adaptation.
 
 What to Do
 
@@ -243,7 +243,7 @@ Characterize early temperament: Was the child easy, difficult, or slow-to-warm?
 
 Ask frequency, intensity, and triggers of tantrums — short frustration vs. explosive, destructive outbursts.
 
-Differentiate normal developmental tantrums (ages 2–4) from pathologic patterns (after age 6, violent, prolonged, injurious, or manipulative).
+Differentiate normal developmental tantrums (ages 2-4) from pathologic patterns (after age 6, violent, prolonged, injurious, or manipulative).
 
 Interpretation: Persistent dysregulation suggests ADHD, mood, anxiety, or trauma-related disorders.
 
@@ -265,7 +265,7 @@ E. Feeding Habits
 
 Ask about infancy feeding: breastfeeding duration, tolerance, texture sensitivity, appetite changes.
 
-Identify food selectivity or sensory aversions: Can suggest autism, anxiety, or obsessive–compulsive traits.
+Identify food selectivity or sensory aversions: Can suggest autism, anxiety, or obsessive-compulsive traits.
 
 Explore family mealtime atmosphere: chaos, coercion, neglect, or emotional tension around food.
 
@@ -310,7 +310,7 @@ These are core regulators of mood and impulse control. Chronic disturbance is di
 5. Do Not Ask Rapid-Fire Chronological Questions
 Parents recall better when narrating in story form (“What was your child like as a baby?”) rather than being quizzed.
 
-6. Do Not Exclude the Child’s Perspective
+6. Do Not Exclude the Child's Perspective
 Older children can recall early habits (“I never liked sleeping alone”). Self-report enriches parental narrative.
 
 7. Do Not End Without Summary Reflection
@@ -323,12 +323,12 @@ Approach developmental history as a living timeline of regulation, connection, a
 
 Prioritize patterns over dates, emotional context over milestones, and relational meaning over statistics.
 
-The psychiatrist’s lens: How did this child learn to be soothed, to control impulses, and to trust care?
+The psychiatrist's lens: How did this child learn to be soothed, to control impulses, and to trust care?
 """
 
 action_medical_guidelines = """
-Medical and physical symptoms often serve as psychological languages in children — expressions of distress when verbal articulation fails. Somatic complaints, fatigue, or appetite changes can be the body’s translation of anxiety, depression, trauma, or environmental stress.
-The psychiatrist’s objective is to decode these bodily signals without prematurely medicalizing or psychologizing — to understand whether the body is speaking for the mind, or whether genuine physical pathology is compounding emotional strain.
+Medical and physical symptoms often serve as psychological languages in children — expressions of distress when verbal articulation fails. Somatic complaints, fatigue, or appetite changes can be the body's translation of anxiety, depression, trauma, or environmental stress.
+The psychiatrist's objective is to decode these bodily signals without prematurely medicalizing or psychologizing — to understand whether the body is speaking for the mind, or whether genuine physical pathology is compounding emotional strain.
 
 What to Do
 
@@ -358,8 +358,8 @@ Ask:
 
 “Where do you usually feel it in your body?”
 
-“When you’re upset, does your body feel different?”
-This encourages emotional–somatic linkage without judgment.
+“When you're upset, does your body feel different?”
+This encourages emotional-somatic linkage without judgment.
 
 7. Evaluate Illness Behavior
 Look at how the child and family respond to illness — excessive attention, fear, or indifference. Recurrent absences from school may point to anxiety-based avoidance.
@@ -384,7 +384,7 @@ Somatic symptoms may have real physiological or mixed origins. Premature dismiss
 Avoid reflexively ordering tests or referrals when emotional patterns are clear. Over-investigation can reinforce health anxiety.
 
 3. Do Not Minimize Fatigue or Sleep Problems.
-Children rarely exaggerate exhaustion; it’s a sensitive indicator of mental depletion or poor circadian hygiene.
+Children rarely exaggerate exhaustion; it's a sensitive indicator of mental depletion or poor circadian hygiene.
 
 4. Do Not Overlook Eating and Body Image in Boys.
 Distorted body perception (muscularity obsession, restrictive dieting) is increasingly common in males; it should be explored equally.
@@ -410,13 +410,13 @@ Outcome: A holistic picture where fatigue, appetite, pain, and body image are un
 """
 
 action_emotional_guidelines = """
-Exploring emotional functioning reveals how a child perceives, regulates, and expresses internal states. It is the psychiatrist’s window into affective tone, resilience, and underlying psychiatric risk — depression, anxiety, trauma, or emotional dysregulation. The goal is not to label feelings but to map emotional literacy, recognize patterns, and differentiate transient mood from enduring disturbance.
+Exploring emotional functioning reveals how a child perceives, regulates, and expresses internal states. It is the psychiatrist's window into affective tone, resilience, and underlying psychiatric risk — depression, anxiety, trauma, or emotional dysregulation. The goal is not to label feelings but to map emotional literacy, recognize patterns, and differentiate transient mood from enduring disturbance.
 
 What to Do
 
 1. Create an Emotionally Safe Setting
 Children reveal affect indirectly. Establish comfort and neutrality before discussing distress. Use tone, pacing, and language appropriate to age.
-Example: “Sometimes people feel happy or sad in different ways. What’s it like for you most days?”
+Example: “Sometimes people feel happy or sad in different ways. What's it like for you most days?”
 
 A. Mood and Affect
 
@@ -434,7 +434,7 @@ Note triggers: Is sadness situational or pervasive?
 
 Evaluate for anhedonia (loss of interest): Diminished joy in play, withdrawal from friends, or flat tone.
 
-Identify hopelessness: “Do you ever feel like things won’t get better?” Persistent hopelessness is a major predictor of self-harm risk.
+Identify hopelessness: “Do you ever feel like things won't get better?” Persistent hopelessness is a major predictor of self-harm risk.
 
 Record crying patterns: Excessive crying or emotional numbness both indicate dysregulation.
 
@@ -480,7 +480,7 @@ For young children: Use stories, drawings, or play to elicit affect.
 
 For adolescents: Reflect their language authentically; overclinical phrasing distances them.
 
-Gauge empathy: Awareness of others’ feelings reveals social-emotional integration.
+Gauge empathy: Awareness of others' feelings reveals social-emotional integration.
 
 III. What Not to Do
 
@@ -497,7 +497,7 @@ Affective symptoms must be contextualized first — neurodevelopmental, relation
 Parents often normalize irritability or worry. Explore it independently. Children may disclose affect only when parent leaves the room.
 
 5. Do Not Invalidate Emotional Narratives With Logic
-Statements like “You shouldn’t worry about that” or “There’s no reason to be sad” break therapeutic safety.
+Statements like “You shouldn't worry about that” or “There's no reason to be sad” break therapeutic safety.
 
 6. Do Not Ignore Nonverbal Cues
 Fidgeting, monotone speech, gaze avoidance, or tears are often more truthful than verbal reports.
@@ -518,15 +518,15 @@ Documentation: Note emotional range, triggers, modulation, recovery, and self-im
 
 
 action_environmental_guidelines = """
-Environmental stressors shape a child’s psychological terrain as profoundly as genetics. Chronic instability — whether economic, social, or physical — leaves measurable effects on emotional regulation, attachment security, and neurodevelopment.
-The psychiatrist’s task is to identify the ecosystem around the child, not merely the child’s symptoms. These factors often explain anxiety, aggression, regression, or withdrawal better than any diagnostic label.
+Environmental stressors shape a child's psychological terrain as profoundly as genetics. Chronic instability — whether economic, social, or physical — leaves measurable effects on emotional regulation, attachment security, and neurodevelopment.
+The psychiatrist's task is to identify the ecosystem around the child, not merely the child's symptoms. These factors often explain anxiety, aggression, regression, or withdrawal better than any diagnostic label.
 
 What to Do
 
 1. Begin With Ecological Curiosity, Not Intrusion
 Ask about the world the child lives in — safety, comfort, and continuity. Frame questions as concern for stability, not investigation:
 
-“What’s it like where you live?”
+“What's it like where you live?”
 “Are there times you feel unsafe at home or nearby?”
 
 Neutral phrasing lowers defensiveness and avoids implying blame.
@@ -595,7 +595,7 @@ Map the Stress Network:
 Identify how external instability (financial, housing, safety) translates into internal stress (hyperarousal, fatigue, mistrust).
 
 Link to Coping Systems:
-Examine child’s regulation methods — avoidance, caretaking behavior, fantasy, or aggression.
+Examine child's regulation methods — avoidance, caretaking behavior, fantasy, or aggression.
 
 Assess Protective Factors:
 Stable caregiver, supportive teacher, religious or community attachment often mitigate harm.
@@ -612,10 +612,10 @@ Socioeconomic adversity is a context, not a disorder. Diagnosis must be grounded
 Blunt questioning can retraumatize. Use calm tone, indirect inquiry, and allow pauses.
 
 3. Do Not Ignore Caregiver Stress.
-Parental burnout or hopelessness often mirrors the child’s anxiety. Family-level intervention may be required.
+Parental burnout or hopelessness often mirrors the child's anxiety. Family-level intervention may be required.
 
 4. Do Not Offer Quick Reassurance.
-Telling a child “It’s okay now” invalidates lived fear. Focus on building safety and trust first.
+Telling a child “It's okay now” invalidates lived fear. Focus on building safety and trust first.
 
 5. Do Not Isolate Trauma Discussion From Developmental Context.
 Early trauma reshapes emotional, cognitive, and social milestones. Always integrate with developmental formulation.
@@ -636,7 +636,7 @@ Focus: Restoration of safety, continuity, and meaning.
 
 action_cognitive_guidelines = """
 Cognitive and behavioral assessment examines how a child perceives, processes, and responds to experiences. Difficulties in attention, thought content, or repetitive behavior often indicate neurodevelopmental, mood, or anxiety-related pathology.
-The psychiatrist’s role is to determine whether these symptoms reflect neurocognitive deficits, emotional dysregulation, or obsessive–compulsive patterns, and to evaluate how they affect functioning in school, relationships, and daily life.
+The psychiatrist's role is to determine whether these symptoms reflect neurocognitive deficits, emotional dysregulation, or obsessive-compulsive patterns, and to evaluate how they affect functioning in school, relationships, and daily life.
 
 What to Do
 
@@ -648,11 +648,11 @@ Persistent distractibility may suggest ADHD, depression, anxiety, or substance-r
 Observe for in-session indicators: fidgeting, poor recall, off-topic responses, or excessive self-monitoring.
 
 3. Assess Thinking Style and Speed
-Note whether the child’s thought flow is coherent, tangential, or racing.
+Note whether the child's thought flow is coherent, tangential, or racing.
 Slowed thought can indicate depression or fatigue; rapid or pressured thinking may suggest hypomanic or anxious states.
 
 4. Explore Obsessive and Compulsive Features
-Ask directly but calmly about repetitive thoughts (“Do thoughts ever come into your mind and won’t go away?”) and behaviors (“Do you ever feel you must do something again and again to feel safe or okay?”).
+Ask directly but calmly about repetitive thoughts (“Do thoughts ever come into your mind and won't go away?”) and behaviors (“Do you ever feel you must do something again and again to feel safe or okay?”).
 Distinguish between age-appropriate rituals and pathologic compulsions causing distress or interference.
 
 5. Identify Intrusive Thoughts
@@ -664,9 +664,9 @@ Ask about recent and remote recall: school instructions, personal events, or seq
 Impairment can stem from depression, trauma, attention deficits, or medication/substance effects.
 
 7. Use Behavioral Anchors
-Correlate subjective complaints (“I can’t focus”) with observable evidence (school performance, errors, procrastination). Avoid overreliance on self-description alone.
+Correlate subjective complaints (“I can't focus”) with observable evidence (school performance, errors, procrastination). Avoid overreliance on self-description alone.
 
-8. Integrate Cognitive–Behavioral Patterns
+8. Integrate Cognitive-Behavioral Patterns
 Link thinking style to behavior:
 
 Negative automatic thoughts → avoidance, low motivation.
@@ -675,11 +675,11 @@ Intrusive thoughts → compulsive checking or reassurance seeking.
 
 Perfectionistic cognition → anxiety and delay.
 
-9. Apply Cognitive–Behavioral Therapy (CBT) Principles in Assessment
+9. Apply Cognitive-Behavioral Therapy (CBT) Principles in Assessment
 When symptoms overlap with substance use or stress conditions, guidelines emphasize CBT-based approaches for early treatment, combining symptom monitoring and coping strategies before formal pharmacologic intervention
 
 10. Rule Out Comorbid Conditions
-Obsessive–compulsive disorder, ADHD, anxiety disorders, trauma-related disorders, and mood disorders frequently coexist; symptoms may mimic each other (e.g., distractibility in anxiety vs. ADHD)
+Obsessive-compulsive disorder, ADHD, anxiety disorders, trauma-related disorders, and mood disorders frequently coexist; symptoms may mimic each other (e.g., distractibility in anxiety vs. ADHD)
 
 What Not to Do
 
@@ -704,22 +704,22 @@ Cognitive symptoms rarely exist in isolation; always integrate mood, sleep, and 
 
 IV. Clinical Orientation
 
-Lens: Cognitive–behavioral functioning as both symptom and coping mechanism.
+Lens: Cognitive-behavioral functioning as both symptom and coping mechanism.
 
 Approach: Structured, hypothesis-driven, yet empathic exploration of how thought patterns influence emotion and behavior.
 
 Goal: Differentiate developmental variation from psychopathology, and identify maladaptive cognitive loops that perpetuate distress.
 
-Outcome: A coherent map of the child’s thinking style, attention control, and behavioral responses — guiding both diagnostic formulation and therapeutic planning.
+Outcome: A coherent map of the child's thinking style, attention control, and behavioral responses — guiding both diagnostic formulation and therapeutic planning.
 """
 
 action_social_support_guidelines = """
 Social support is both a protective buffer and a therapeutic amplifier in child and adolescent psychiatry. It mediates resilience against stress, moderates risk for depression and substance use, and promotes recovery from trauma.
-The psychiatrist’s role is to assess availability, quality, and perceived reliability of support systems, while identifying social isolation, mistrust, or unsafe relationships that undermine healing.
+The psychiatrist's role is to assess availability, quality, and perceived reliability of support systems, while identifying social isolation, mistrust, or unsafe relationships that undermine healing.
 
 What to Do
 
-1. Assess the Child’s Support Map
+1. Assess the Child's Support Map
 Ask who the child turns to when upset or in trouble. Note emotional anchors (friends, teachers, counsellors) versus formal supports (therapists, school staff).
 
 “When you feel sad or worried, who helps you feel better?”
@@ -770,7 +770,7 @@ Children may withhold information about unsafe relationships out of fear or loya
 Neighbours, religious leaders, or extended kin often provide stability — include them in the ecosystem when appropriate.
 
 5. Do Not Isolate Treatment From Social Context
-Therapy detached from the child’s real-world network loses continuity. Bridge school, family, and counselling domains collaboratively.
+Therapy detached from the child's real-world network loses continuity. Bridge school, family, and counselling domains collaboratively.
 
 6. Do Not Treat Lack of Support as a Personality Flaw
 It often reflects systemic neglect, trauma, or mobility — not relational incompetence.
@@ -784,4 +784,183 @@ Approach: Collaborative and restorative — build scaffolds, not just insight.
 Goal: Reinforce trust, ensure the presence of at least one emotionally safe adult, and mobilize supportive systems.
 
 Documentation: Record presence, accessibility, and reliability of supports across settings.
+"""
+
+action_opinon_guidelines = """
+Guidelines for Responding to Child/Adolescent Questions About Psychiatric Opinions or Advice
+WHAT TO DO (Do-list)
+
+1.Set the physical & relational frame
+- Use a child-friendly room - calm lighting, a few toys, paper/colours, and a chair at the child's eye-level.  
+- Explain the agenda in simple terms (“We'll talk about what's been bothering you, I'll answer your questions, then we'll decide together what might help”).  
+- Obtain parental permission for the interview and for any information you will share later; explain the limits of confidentiality at the start (see #6).
+
+2.Build rapport before answering
+- Begin with neutral, interest-based talk (e.g., favorite games, pets, school subjects).  
+- Mirror the child's language and use the name they prefer.  
+- Validate the child's curiosity: “I'm glad you asked - it shows you care about what's happening.”
+
+3.Clarify the child's question
+- Restate: “You're wondering what I think about…, is that right?”  
+- Ask why the answer matters (“What would help you or your family if you knew my view?”).  
+
+4.Check developmental understanding
+- Use age-appropriate probes:  
+  - 5-7y - pictures, dolls, or simple “yes/no” and “tell me a story” questions.  
+  - 8-12y - short open-ended questions, “What do you think would happen if…?”  
+  - 13-17y - more abstract dialogue, “What are your goals?” and “How do you see this fitting with your plans?”
+
+5.Screen for safety before giving any opinion or advice
+- Ask directly (but gently) about suicidal thoughts, self-harm, aggression, access to weapons, and substance use (APAIII①C).  
+- If any risk is identified, pause the advice, develop a safety plan, and follow mandated reporting procedures.
+
+6.Explain confidentiality & its limits
+- Tell the child (and parents) that what is said stays private unless:  
+  - The child is at risk of harming self or others,  
+  - Abuse or neglect is disclosed, or  
+  - Legal reporting is required.  
+
+7.Provide a provisional, developmentally appropriate formulation
+- Phrase it as a hypothesis, not a final diagnosis:  
+  - “It looks like you're feeling a lot of worry that shows up at school.”  
+- Highlight strengths first, then the difficulty, then the possible next steps.  
+
+8.Offer options, not directives
+- List 2-3 evidence-based possibilities (e.g., counseling, skills training, medication) with simple pros/cons.  
+- Ask the child which option feels most acceptable: “Which of these sounds like something you'd be willing to try?”  
+
+9.Involve the parent/guardian appropriately
+- Summarise the child's question, your provisional view, and the options.  
+- Obtain the parent's perspective and discuss treatment preferences (APAVIII②C).  
+- Ensure the child's voice is heard in the final plan, especially for ages ≥12y.
+
+10.Document everything
+- Record:  
+  - The child's exact question, your clarification, and developmental check.  
+  - Safety screen results.  
+  - Provisional formulation, options offered, and child's preference.  
+  - Plan for follow-up and any parental input. (APAIX①C)
+
+11.Set a clear follow-up
+- State when you will return with a more detailed evaluation (e.g., “We'll meet again next week after I talk with your teacher and run a couple of questionnaires”).  
+- Provide a contact point for urgent concerns.
+
+12.Respect cultural & contextual factors
+- Ask about the family's beliefs, explanations, and cultural norms (APAV②C).  
+- Adjust language and options to fit cultural context (e.g., preferred counseling style, religious considerations).
+
+WHAT NOT TO DO (Don't-list)
+
+- Don't jump to a definitive diagnosis or treatment plan before completing the full assessment (history, rating scales, collateral info).  
+- Don't skip the safety screen; never give advice without first ruling out suicidality, self-injury, aggression, or abuse.  
+- Don't use adult psychiatric jargon (“psychotic break,” “borderline personality”) - keep language concrete and age-appropriate.  
+- Don't assume the child's understanding based solely on chronological age; always verify comprehension.  
+- Don't give personal lifestyle directives unrelated to the presenting problem (e.g., “Stop playing video games”) unless they are part of the therapeutic plan and the child agrees.  
+- Don't disclose the child's statements to parents (or others) without the child's consent unless safety or legal mandates require it.  
+- Don't ignore the child's strengths; focusing only on deficits harms self-esteem and therapeutic alliance.  
+- Don't make the parent the sole decision-maker for adolescents (≥12y) unless the child is unable to participate; respect the teenager's emerging autonomy.  
+- Don't promise certainty (“I guarantee this will work”) - emphasize provisional nature and possible outcomes.  
+- Don't neglect cultural context; avoid imposing your own beliefs about “normal” behavior without exploring the family's perspective.  
+- Don't omit documentation of the question, response, risk assessment, and plan - it is essential for continuity of care and legal protection.  
+- Don't end the session without a clear next step; leaving the child uncertain increases anxiety and may break trust.  
+- Don't rely solely on rating scales for diagnosis or advice; they supplement but cannot replace a personalized interview.  
+- Don't overlook the need for a physical/medical review when symptoms could have a somatic basis.  
+"""
+
+
+action_scoring_guidelines = """
+AGENT PRIMARY DIRECTIVE (MANDATORY): Your sole function is to analyze the provided conversation SUMMARY and output a single integer from 1 to 10. This is the Global Distress Score (GDS).
+1 = Least Concern / Thriving 10 = High Concern / Active Crisis
+You are a silent, analytical, non-hallucinating rating agent.
+●	DO NOT output any text, explanation, or justification.
+●	DO NOT output a JSON object.
+●	Your ONLY output must be the integer (e.g., 6).
+1. SCIENTIFIC RATIONALE: SCORING IMPAIRMENT, NOT INTENSITY
+This is your core logic. You are not scoring how "sad" or "angry" the user is. You are scoring how much their emotional state is functionally impairing their life.
+Impairment > Intensity.
+●	Example 1 (Low Impairment):
+○	SUMMARY: "User is intensely sad (9/10) after a loss but reports they are still attending school and talking to friends."
+○	Analysis: The intensity is high, but the impairment is low. The user is functional and using support systems.
+○	SCORE: 4
+●	Example 2 (High Impairment):
+○	SUMMARY: "User is moderately sad (5/10) about bullying and has now stopped going to school (school refusal)."
+○	Analysis: The intensity is moderate, but the impairment is severe (avoiding a core life activity).
+○	SCORE: 8
+2. THE "THREE PILLARS" OF HOLISTIC ANALYSIS
+Before assigning a score, you must analyze the SUMMARY for these three factors.
+1.	PERVASIVENESS (The "Breadth" of Distress):
+○	Low Pervasiveness (Contained): The distress is in one domain. (e.g., "User is only anxious about Physics exams, but family and peer_relations are strengths.") -> Lowers Score.
+○	High Pervasiveness (Leaking): The distress is "leaking" across multiple domains. (e.g., "Family conflict is causing sadness, which is killing attention in school and making the user irritable with friends.") -> Significantly Raises Score.
+2.	PERSISTENCE (The "Depth" of Distress):
+○	Acute/Situational: The distress is a reaction to a single, recent event. (e.g., "User is angry about a fight today.") -> Lowers Score.
+○	Chronic/Pervasive: The distress is described as a permanent state. Look for keywords: always, never, forever, all the time, "can't remember the last time..." (e.g., "User reports feeling hopeless every day.") -> Significantly Raises Score.
+3.	IMPAIRMENT (The "Impact" on Life):
+○	This is the MOST IMPORTANT PILLAR. Is the distress causing behavioral changes?
+○	Low Impairment: "User feels anxious about homework but is still completing it." (Score 3-4)
+○	High Impairment: "User's anxiety is so high they are experiencing school refusal (not going)." "User's mood is so low they can't get out of bed." "User is isolating from all friends." (Score 8+)
+3. THE GDS (GLOBAL DISTRESS SCORE) RUBRIC (1-10)
+This is your official scoring matrix. You must assign one integer.
+TIER 1: Stable / Resilient (Score 1-2)
+●	SCORE 1: Thriving.
+○	Keywords: Happy, confident, proud, excited, great mood, high self-esteem.
+○	Analysis: Summary is actively positive. User is leveraging strengths and expressing a positive outlook.
+●	SCORE 2: Resilient.
+○	Keywords: Relieved, coped, solved, felt better, handled it, I'm proud of myself.
+○	Analysis: Summary shows a past stressor that has been resolved by the user's own actions or strengths. They demonstrate problem-solving, gratitude, or self-efficacy.
+TIER 2: Mild Distress (Score 3-4)
+●	SCORE 3: Manageable Stress.
+○	Keywords: Irritable, annoyed, worried (about one thing), frustrated, bored, meh.
+○	Analysis: A "normal bad day." Distress is contained to a single, acute event (e.g., one exam, one neighbour issue, peer pressure). Pervasiveness is LOW. Impairment is LOW. Self-esteem is intact.
+●	SCORE 4: Strained but Coping.
+○	Keywords: Sad, lonely, guilt, anxious, stressed out, confused.
+○	Analysis: The distress is higher, but the user is actively trying to cope (e.g., "User is sad about a loss but is talking to friends"). The user is still functional. Self-esteem is bruised but not broken.
+TIER 3: Moderate Distress (Score 5-6)
+●	SCORE 5: Pervasive Distress (Low Impairment).
+○	Keywords: Crying, drained, miserable, empty, numb, hiding.
+○	Analysis: The distress is "leaking." Pervasiveness is HIGH. (e.g., "Family conflict is making them sad at school"). Their mood is low, but they are not yet failing or refusing school. Self-esteem is low.
+●	SCORE 6: Noticeable Impairment. (YELLOW FLAG)
+○	Keywords: Failing, grades slipping, lashing out (anger), can't focus, shame, envy.
+○	Analysis: The distress is now causing clear behavioral outcomes. Impairment is MODERATE. (e.g., "Test anxiety is so high they are getting low grades." "User's social isolation is making them feel hopeless about friends.")
+TIER 4: Severe Distress (Score 7-8)
+●	SCORE 7: High Impairment.
+○	Keywords: School refusal (not going), can't get out of bed, crying all the time, panic attacks, sidelined, mistreated, trauma.
+○	Analysis: The user's daily functioning is significantly impaired. They are avoiding core life activities. (e.g., "User is engaging in school refusal due to bullying.")
+●	SCORE 8: Pervasive & Hopeless. (RED FLAG)
+○	Keywords: Hopeless, never, always, what's the point, numb, empty (if chronic).
+○	Analysis: High Impairment + Chronic Persistence. The user uses all-or-nothing cognitive distortions ("It will never get better," "I always fail"). Their self-esteem is very low (shame). Their coping skills are failing.
+TIER 5: Critical / Crisis (Score 9-10)
+●	SCORE 9: Critical Risk / Passive Ideation.
+○	Keywords: Worthless, burden, everyone would be better off without me, I wish I could disappear, I wish I'd never been born, I'm a bad person.
+○	Analysis: The summary contains any clear language of worthlessness, shame, hopelessness about life (not just an exam), or references to severe trauma (e.g., violence, abuse). This is an immediate red flag.
+●	SCORE 10: Active Crisis / Active Ideation.
+○	Keywords: I want to die, I want to kill myself, I want to cut myself, I have a plan, I'm being abused, I'm in danger.
+○	Analysis: The summary contains any clear language of active suicidal ideation, self-harm, or immediate danger (violence). This is a CRITICAL ALERT.
+4. NUANCE & SPECIAL HANDLING RULES (Anti-Hallucination Guide)
+●	RULE 1: The "Stonewall" (idk, fine, meh).
+○	Analysis: A summary full of one-word, evasive, or non-committal answers (idk, fine, meh, nothing) is NOT a Score 1 or 2.
+○	Action: This indicates avoidance, mistrust, numbness, or hopelessness (anhedonia). It is a sign of distress. Score this as a 4 or 5.
+●	RULE 2: Dark Humor / Sarcasm.
+○	Analysis: Teens often "leak" their "why" through "jokes." A summary stating, "User joked about failing and wanting to die" is NOT a joke.
+○	Action: Treat any summary reference to "joking" about hopelessness, worthlessness, suicide, or self-harm with 100% seriousness. Score this as a 9 or 10.
+●	RULE 3: Appropriate Anger vs. Impairing Anger.
+○	Analysis: A user will be justifiably angry about bias, mistreatment, financial stress, or community violence. Do not score "appropriate anger" as high-level distress unless it is causing impairment.
+○	Action:
+■	"User is angry about teacher's bias but is still studying." -> Score 4.
+■	"User is so angry about teacher's bias that they have stopped doing homework (school refusal) and feel hopeless." -> Score 8.
+■	"User is so angry they want to hit someone." -> Score 9 (Risk of violence).
+●	RULE 4: Mixed "Moods" (The "Positive + Negative" Summary).
+○	Analysis: The summary states: "User got a good grade (a strength) but is crying all night because of a breakup (loss)."
+○	Action: Always score for the peak negative emotion (the distress). The grief is the active problem. The "good grade" is a strength/resilience factor, but it does not cancel out the pain. The score is based on the crying and grief, not the grade.
+●	RULE 5: The "Caretaker" / "Prosocial" Stressor.
+○	Analysis: The summary states: "User is worried and anxious because their best friend is depressed."
+○	Action: This is not a Score 1-2. The source is "prosocial" (a strength), but the impact on the user is still anxiety, worry, and caretaker fatigue. Score this as a 4 or 5.
+●	RULE 6: Chronic Environmental Stressors.
+○	Analysis: Financial guilt, a biased community, or a chaotic housing situation are chronic stressors. They are not acute, one-day events.
+○	Action: These create a higher baseline of distress. A user with financial guilt is at a baseline of Score 5-6, even if they seem "okay" on the surface, because the Pervasiveness and Persistence of the worry are high.
+●	RULE 7: Grief vs. Hopelessness.
+○	Analysis: Grief (e.g., from a loss) is an intense sadness and anger in reaction to an event. This is a normal, healthy process.
+○	Action: Score grief as a 4-6. Only score it as 8-10 if the grief has transformed into chronic hopelessness, worthlessness, or suicidal ideation.
+●	RULE 8: Guilt vs. Shame. (CRITICAL NUANCE)
+○	Analysis: Guilt = "I did a bad thing" (e.g., lied, yelled). Shame = "I am a bad person" (e.g., worthless, a burden).
+○	Action: Guilt is often a healthy motivator. "User feels guilt about lying." -> Score 4-5. Shame is highly corrosive to self-esteem and is a high-risk flag. "User feels shame and thinks they are a worthless, 'bad person'." -> Score 9.
 """
