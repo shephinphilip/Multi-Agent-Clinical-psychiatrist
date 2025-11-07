@@ -1,8 +1,8 @@
 # app.py
 import os, re, json, torch, datetime, logging, numpy as np
 from typing import Annotated, Optional, List, Dict, Any, cast, TypedDict
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+# from fastapi import FastAPI, Request
+# from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import sys
@@ -25,8 +25,8 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_classic.chains import LLMChain
 from logging.handlers import RotatingFileHandler
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.encoders import jsonable_encoder
+# from fastapi.middleware.cors import CORSMiddleware
+# from fastapi.encoders import jsonable_encoder
 from langgraph.graph import StateGraph, END
 import operator
 from autogen_report import generate_autogen_report
