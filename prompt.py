@@ -59,24 +59,44 @@ ZEN_MODE_SUGGESTION = (
 
 
 # --------------------------------------------------------------
-# 1️⃣  Self‑harm / suicidal intent detection
+# 1️⃣  Self‑harm (suicidal) detection – regex list
 # --------------------------------------------------------------
 SELF_HARM_PATTERNS: List[Pattern] = [
-    re.compile(r"\b(end|die|kill|commit\s+suicide|take\s+my\s+life|no\s+way\s+out|can't\s+go\s+on)\b", re.IGNORECASE),
-    re.compile(r"\b(I'm\s+thinking\s+about\s+ending\s+it|I\s+want\s+to\s+die|I\s+want\s+to\s+kill\s+myself|I\s+can't\s+handle\s+this)\b", re.IGNORECASE),
-    re.compile(r"\b(die\s+now|just\s+kill\s+myself|wish\s+I\s+was\s+dead)\b", re.IGNORECASE),
-    # add any additional phrasing you see in your logs
+    # classic “I want to die / kill myself”
+    re.compile(r"\b(i\s+want\s+to\s+(die|kill\s+myself|end\s+myself))\b", re.IGNORECASE),
+    # “I can't …”  (covers cant, can't, cannot)
+    re.compile(r"\b(i\s+can\'?t\s+(handle|live|go\s+on|continue|keep\s+going))\b", re.IGNORECASE),
+    # “I am done / I am over it”
+    re.compile(r"\b(i\s+am\s+(done|over\s+it|finished|done\s+with\s+life))\b", re.IGNORECASE),
+    # “I have no reason to live” / “no reason to live”
+    re.compile(r"\b(no\s+reason\s+to\s+live|no\s+point\s+to\s+living)\b", re.IGNORECASE),
+    # “I'm hopeless”, “life is over”, “everything is over”
+    re.compile(r"\b(hopeless|life\s+is\s+over|everything\s+is\s+over)\b", re.IGNORECASE),
+    # “I want to end it / it’s ended”
+    re.compile(r"\b(i\s+want\s+to\s+end\s+it|it\'?s\s+ended|all\s+ended|all\s+over)\b", re.IGNORECASE),
+    # “give up”, “I give up”
+    re.compile(r"\b(i\s+give\s+up|give\s+up)\b", re.IGNORECASE),
+    # “I don’t want to live”, “don’t want to live”
+    re.compile(r"\b(i\s+don\'?t\s+want\s+to\s+live|don\'?t\s+want\s+to\s+live)\b", re.IGNORECASE),
+    # “I’m thinking about suicide”, “thinking about suicide”
+    re.compile(r"\b(i\'?m?\s+thinking\s+about\s+suicide|thinking\s+about\s+suicide)\b", re.IGNORECASE),
+    # “I wish I were dead”, “wish I were dead”
+    re.compile(r"\b(i\s+wish\s+i\s+were\s+dead|wish\s+i\s+were\s+dead)\b", re.IGNORECASE),
+    # “I want to kill … (other person) – already covered by moral‑risk, but we keep it}
+    # you can add more as the conversation data shows new phrasing.
 ]
 
 def detect_self_harm(text: str) -> bool:
-    """True if the utterance contains any suicidal/self‑harm expression."""
+    """Return True if any suicidal/self‑harm pattern is found."""
     if not text:
         return False
-    lowered = text.lower()
+    # Normalise a little: replace punctuation with space to aid word boundaries
+    clean = re.sub(r"[`'\".,;:!?\\-]", " ", text.lower())
     for pat in SELF_HARM_PATTERNS:
-        if pat.search(lowered):
+        if pat.search(clean):
             return True
     return False
+
 
 
 # --------------------------------------------------------------
