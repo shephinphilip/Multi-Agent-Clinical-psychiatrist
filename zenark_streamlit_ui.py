@@ -93,7 +93,11 @@ with chat_tab:
         # Display history
         for msg in st.session_state.conversation:
             with st.chat_message("user" if "user" in msg else "assistant"):
-                st.write(msg.get("user") or msg.get("ai"))
+                # Clean AI messages to remove source citations before display
+                display_msg = msg.get("user") or msg.get("ai", "")
+                if "user" not in msg and "\n\nSource: " in display_msg:
+                    display_msg = display_msg.split("\n\nSource: ")[0]
+                st.write(display_msg)
 
         if prompt := st.chat_input("What's on your mind today?"):
             st.session_state.conversation.append({"user": prompt})
@@ -111,8 +115,13 @@ with chat_tab:
                         st.session_state.max_questions,
                         st.session_state.session_id
                     )
-                    st.write(reply)
-                    st.session_state.conversation.append({"ai": reply})
+                    # Clean the reply to remove source before display and save
+                    if "\n\nSource: " in reply:
+                        clean_reply = reply.split("\n\nSource: ")[0].strip()
+                    else:
+                        clean_reply = reply.strip()
+                    st.write(clean_reply)
+                    st.session_state.conversation.append({"ai": clean_reply})
             st.session_state.question_index += 1
             st.rerun()
 

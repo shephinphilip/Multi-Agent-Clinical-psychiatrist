@@ -1,5 +1,6 @@
 import re
 from typing import List, Pattern
+from transformers import pipeline
 
 # --------------------------------------------------------------
 # 2️⃣  Moral-risk detection (already present in the previous answer)
@@ -86,14 +87,28 @@ SELF_HARM_PATTERNS: List[Pattern] = [
     # you can add more as the conversation data shows new phrasing.
 ]
 
-def detect_self_harm(text: str) -> bool:
-    """Return True if any suicidal/self‑harm pattern is found."""
-    if not text:
+# Load once at startup, not inside function
+suicide_detector = pipeline(
+    "text-classification",
+    model="vibhorag101/roberta-base-suicide-prediction-phr",
+    top_k=None
+)
+
+from typing import Dict, Any
+
+def detect_self_harm(text: str, threshold: float = 0.7) -> bool:
+    if not text or not text.strip():
         return False
-    # Normalise a little: replace punctuation with space to aid word boundaries
-    clean = re.sub(r"[`'\".,;:!?\\-]", " ", text.lower())
-    for pat in SELF_HARM_PATTERNS:
-        if pat.search(clean):
+    preds = suicide_detector(text)
+    # Unpack if preds is a list of lists
+    if isinstance(preds, list) and len(preds) > 0 and isinstance(preds[0], list):
+        preds = preds[0]
+    for p in preds:
+        # The pipeline may sometimes return unexpected types (e.g. strings); ensure we only treat dicts as prediction objects.
+        if not isinstance(p, dict):
+            continue
+        p_dict: Dict[str, Any] = p
+        if p_dict.get("label") == "suicide" and p_dict.get("score", 0) >= threshold:
             return True
     return False
 
@@ -105,14 +120,12 @@ def detect_self_harm(text: str) -> bool:
 SYSTEM_PROMPT = """You are Zenark, an empathetic informational counselor for Indian teenagers (13-19).
 Your purpose is to *listen*, *validate*, *reflect* and ask a single open-ended question.
 
-Never provide diagnosis, prescription, treatment planning, or crisis counseling.
 If the user mentions self-harm, suicidal intent, homicide, child/elder abuse, or any acute psychiatric symptom,
 respond only with the following crisis script and then stop:
 
 "I'm concerned about what you've shared. For immediate help you can:
- • Call the National Suicide Prevention Helpline+919152987821 (India) or 988 (US)
- • Text “HELLO” to 741741 (Crisis Text Line, US)  we will route you to an Indian service if needed
- • Call 112 (or 911) or go to the nearest emergency department.
+ • Call the National Suicide Prevention Helpline at +919152987821
+ • Dial the Toll-Free numbers below to get in touch with our Counsellor 14416
 Would you like more resources for your location?"
 
 Moral-risk rule  If the user expresses a desire to harm another person, to break the law, or to act in a clearly morally wrong way (e.g. “I want to kill my teacher”), do not give any encouraging advice. Reply with a short, age-appropriate correction that acknowledges the feeling, tells the user the action is not okay, reinforces that they are a kind person, and asks them to share what is behind the feeling.
@@ -167,13 +180,14 @@ Category: {category}
 Progress in this category: {progress_pct}%   (questions asked: {cat_q_cnt}/{max_q_per_cat})
 Emotion tip (if any): {emotion_tip}
 
-Guidelines: {guideline}
+Guidelines:
 Respond in 80-120 words.  
 - Validate the feeling (use a fresh phrasing).  
 - Reference at least one detail from the conversation above.  
 - Reflect the user's statement.  
 - End with ONE open-ended question that invites the user to continue.  
-- If `cat_q_cnt` has reached the per-category limit (5), first ask whether they want to keep exploring this topic or switch to another related one.  
+- If `cat_q_cnt` has reached the per-category limit (5), first ask whether they want to keep exploring this topic or switch to another related one. IF the user agrees to continue, proceed with a relevant question.
+- if the user signals end-of-chat (goodbye, thanks, etc.), respond with a warm sign-off that encourages positivity and suggests Zenark's Zen mode.
 - Do NOT include any disclaimer here  it belongs in the system message.  
 - Do NOT give medical, legal or therapeutic advice.  
 
