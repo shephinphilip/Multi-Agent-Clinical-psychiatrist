@@ -32,7 +32,7 @@ import operator
 from autogen_report import generate_autogen_report
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
-from prompt import SYSTEM_PROMPT, USER_PROMPT, EMOTION_TIPS,detect_end_intent,detect_moral_risk,ZEN_MODE_SUGGESTION
+from prompt import SYSTEM_PROMPT, USER_PROMPT, EMOTION_TIPS,detect_end_intent,detect_moral_risk,ZEN_MODE_SUGGESTION,detect_self_harm
 
 # app = FastAPI(title="Zenark Mental Health API", version="2.0", description="Empathetic AI counseling system with detailed logging.")
 # app.add_middleware(
@@ -268,6 +268,15 @@ CATEGORY_MAP.update({
     "environmental": "environmental_stress", "cognitive": "cognitive_concern", "social_support": "social_support",
     "opinion": "opinion",  # Added mapping for opinion
 })
+
+
+CRISIS_RESPONSE = (
+    "I’m really sorry you’re feeling this way. It sounds like you’re thinking about ending your life, and that’s a serious sign you deserve help right now. "
+    "Please call the National Suicide Prevention Helpline +91 9152987821 (India) or 988 (US) immediately. "
+    "You can also text “HELLO” to 741741 (Crisis Text Line, US) – we’ll route you to an Indian service if needed, or call 112 (or 911) or go to the nearest emergency department. "
+    "Would you like me to give you any other resources for your location?"
+)
+
 
 # Tools (unchanged, but simplified - no full agent)
 @tool(
@@ -510,7 +519,14 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
         tip = ""
 
     # --------------------------------------------------------------
-    # 5️⃣  **Moral‑risk pre‑filter** (dangerous intent)
+    # 5️⃣  **Self‑harm / suicidal‑ideation pre‑filter** (priority #1)
+    # --------------------------------------------------------------
+    if detect_self_harm(state["user_text"]):
+        logger.warning("Self‑harm detected – returning crisis script.")
+        return {"messages": [AIMessage(content=CRISIS_RESPONSE)]}
+
+    # --------------------------------------------------------------
+    # 6️⃣  **Moral‑risk pre‑filter** (violent / illegal intent) (priority #2)
     # --------------------------------------------------------------
     if detect_moral_risk(state["user_text"]):
         moral_validation = "I hear that you’re feeling really upset right now."
@@ -525,7 +541,7 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
         return {"messages": [AIMessage(content=safe_text)]}
 
     # --------------------------------------------------------------
-    # 6️⃣  **End‑chat pre‑filter** (goodbye / session close)
+    # 7️⃣  **End‑chat pre‑filter** (priority #3)
     # --------------------------------------------------------------
     if detect_end_intent(state["user_text"]):
         goodbye_msg = (
@@ -536,29 +552,29 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
         return {"messages": [AIMessage(content=goodbye_msg)]}
 
     # --------------------------------------------------------------
-    # 7️⃣  **Progress < 5 %** → simple rapport‑only response
+    # 8️⃣  **Progress < 5 %** → simple rapport‑only response (priority #4)
     # --------------------------------------------------------------
     if not can_probe:
         fallback = (
-            "I hear you. It sounds like you're dealing with something important. "
-            "What's on your mind right now?"
+            "I hear you. It sounds like you’re dealing with something important. "
+            "What’s on your mind right now?"
         )
-        logger.info("Progress < 5% → returning built-in rapport response.")
+        logger.info("Progress < 5 % → returning built‑in rapport response.")
         return {"messages": [AIMessage(content=fallback)]}
 
     # --------------------------------------------------------------
-    # 8️⃣  **Question limit reached** → ask about continuing or switching
+    # 9️⃣  **Question limit reached** → ask to continue or switch (priority #5)
     # --------------------------------------------------------------
     if need_switch_q:
         switch_prompt = (
-            "We've talked a lot about this topic already. "
+            "We’ve talked a lot about this topic already. "
             "Would you like to explore it a bit more, or would you prefer to talk about something else?"
         )
-        logger.info("Question limit reached → returning switch-topic prompt.")
+        logger.info("Question limit reached → returning switch‑topic prompt.")
         return {"messages": [AIMessage(content=switch_prompt)]}
 
     # --------------------------------------------------------------
-    # 9️⃣  Build optional flag-in-prompt strings (kept for completeness)
+    # 🔟  (Optional) tiny flag‑in‑prompt strings for the LLM
     # --------------------------------------------------------------
     probe_instruction = (
         "" if can_probe else
@@ -571,7 +587,7 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
     )
 
     # --------------------------------------------------------------
-    # 🔟  Assemble the messages that go to the LLM
+    # 1️⃣1️⃣  Assemble the messages that go to the LLM
     # --------------------------------------------------------------
     messages: List[BaseMessage] = [
         SystemMessage(content=SYSTEM_PROMPT),
@@ -593,7 +609,7 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
     ]
 
     # --------------------------------------------------------------
-    # 1️⃣1️⃣  Call the model → JSON parser → ZenarkResponse
+    # 1️⃣2️⃣  Call the model → JSON parser → ZenarkResponse
     # --------------------------------------------------------------
     try:
         chain = (ChatOpenAI(model="gpt-4o-mini", temperature=0.7) | response_parser)
@@ -612,15 +628,16 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
         final_text = f"{result.validation} {result.reflection} {result.question}"
         logger.debug(f"Structured response: {result.model_dump_json()}")
     except Exception as exc:
-        logger.exception(f"LLM failed, falling back - {exc}")
+        logger.exception(f"LLM failed, falling back – {exc}")
         final_text = (
-            "I'm here to listen. Could you tell me more about how you’re feeling?"
+            "I’m here to listen. Could you tell me more about how you’re feeling?"
         )
 
     # --------------------------------------------------------------
-    # 1️⃣2️⃣  Return updated chat history
+    # 1️⃣3️⃣  Return updated chat history
     # --------------------------------------------------------------
     return {"messages": [AIMessage(content=final_text)]}
+
 
 
 # Build the graph
