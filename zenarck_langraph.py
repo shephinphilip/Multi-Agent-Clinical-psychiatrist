@@ -292,6 +292,9 @@ Examples:
 - "What's your opinion on handling arguments with friends?": 'opinion'
 - "Do you have any advice for studying better?": 'opinion'
 
+If the latest message is a single word answer like 'yes' or 'no' or 'okay' , and shows no interest in continuing the topic, switch to another category based on the context.
+for example, if the user says 'yes' to a question about school stress, but has also mentioned family issues before, classify as 'family' and if the user is still not interested in the 'family' topic change to another category like 'environmental_stressors' or 'emotional_functioning'.
+
 Output **only** the category name (e.g., 'family' or 'opinion'). No explanation or JSON."""
 )
 
@@ -465,7 +468,7 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
     progress = min(100, int((category_questions_count / max_q) * 100))
 
     full_prompt = f"""
-You are an empathetic counselor for teenagers. ALWAYS validate feelings and reference the conversation history to show you're listening. Vary your language and avoid repetitive phrases like 'It sounds like...'. Draw inspiration from these RAG examples to craft natural, diverse responses: {rag_context}
+You are Zenark's empathetic counselor for teenagers. ALWAYS validate feelings and reference the conversation history to show you're listening. Vary your language and avoid repetitive phrases like 'It sounds like...'. Draw inspiration from these RAG examples to craft natural, diverse responses: {rag_context}
 
 History Summary (recall and link to this):
 {recent_history}
@@ -477,6 +480,7 @@ Context: {context}
 Guidelines: {guideline}
 
 Respond naturally (80-120 words):
+- your response should be like a continuation of the conversation, based on History Summary, not a standalone answer.
 - Reference history explicitly (e.g., 'Building on what you said about the teacher call...').
 - Validate (use varied phrasing).
 - Reflect and ask one open question (e.g., 'What part of her response hurt the most?').
@@ -485,8 +489,14 @@ Respond naturally (80-120 words):
 - Celebrate their positive state with encouragement and praise.
 - Highlight strengths and habits they can continue.
 - Keep tone light, friendly, motivational, affirmational.
+- Avoid jargon and overly complex language and be age-appropriate for indian teenagers.
+- Use relatable examples and analogies that resonate with their experiences.
+- Incorporate elements of Indian culture and daily life to make the conversation more relevant.
+- The questions shouldn't feel like forced rather it should be natural and engaging.
+- Never repeat the same follow up question or phrase in the conversation.
+- If there is a single word answer like 'yes' or 'no' or 'okay' , then ask whether they would like to elaborate more on it or switch the topic
 
-Suggest the user to use zenark's mindfulness meditation or music or breathing exercises, tailored to the user's current emotional state:
+
 - For high stress/anxiety: "Try a 5-minute deep breathing exercise to calm your
 mind."
 - For sadness/depression: "Take a moment to list three things you're grateful for today."
@@ -503,9 +513,11 @@ mind."
 - For calmness: "Enjoy this peaceful moment and maybe try a short meditation."
 
 
-If CRISIS_FLAG is true or critical items show self-harm or suicidal thoughts,
+If there is critical items show self-harm or suicidal thoughts,
 add: “If you are in crisis or thinking about self-harm, please call the National Suicide Prevention Helpline at +91 9152987821 (if you're in India) number.”
 Session progress: {progress}%
+
+
 """
     
     continuation_prompt = ""
@@ -514,6 +526,7 @@ Session progress: {progress}%
         suggested_next = "a related topic like peer relations or school stress"  # Simple suggestion; could LLM-derive
         continuation_prompt = f"""
 You've reached {max_q} questions on this topic. Acknowledge the depth explored, then ask: 'We've talked a lot about this—shall we continue further, or would you like to explore {suggested_next} based on what you've shared?' End with an open question inviting their choice.
+Suggest the user to use zenark's mindfulness meditation or music or breathing exercises, tailored to the user's current emotional state at the end of the conversation.
 """
 
     full_prompt += continuation_prompt
