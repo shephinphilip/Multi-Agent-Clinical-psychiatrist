@@ -22,7 +22,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage,SystemMessage
 from langchain_classic.chains import LLMChain
 from logging.handlers import RotatingFileHandler
 # from fastapi.middleware.cors import CORSMiddleware
@@ -30,6 +30,9 @@ from logging.handlers import RotatingFileHandler
 from langgraph.graph import StateGraph, END
 import operator
 from autogen_report import generate_autogen_report
+from langchain_core.output_parsers import JsonOutputParser
+from pydantic import BaseModel, Field
+from prompt import SYSTEM_PROMPT, USER_PROMPT, EMOTION_TIPS,detect_end_intent,detect_moral_risk,ZEN_MODE_SUGGESTION
 
 # app = FastAPI(title="Zenark Mental Health API", version="2.0", description="Empathetic AI counseling system with detailed logging.")
 # app.add_middleware(
@@ -210,6 +213,17 @@ except Exception as e:
     CORPUS = []
     CORPUS_EMB = torch.tensor([])
 
+
+
+class ZenarkResponse(BaseModel):
+    validation: str = Field(description="Short validation of the user's feeling, 10‑15 words.")
+    reflection: str = Field(description="A concise reflective sentence that shows you understood the user.")
+    question: str = Field(description="One open‑ended question, encouraging the user to elaborate or choose a new topic.")
+
+response_parser = JsonOutputParser(pydantic_object=ZenarkResponse)
+
+
+
 # Dynamic category extraction
 def extract_categories_from_json(file_path: str):
     with open(file_path, "r", encoding="utf-8") as f:
@@ -341,6 +355,12 @@ def get_guideline_prompt(category: str) -> str:
 # Persistent session state for category counts
 session_category_counts: Dict[str, Dict[str, int]] = {}
 
+
+# --------------------------------------------------------------
+# 2️⃣  Moral‑risk detection (run before we ever call the LLM)
+# --------------------------------------------------------------
+import re
+
 # ============================================================
 #  LANGGRAPH SETUP
 # ============================================================
@@ -451,119 +471,157 @@ def get_guideline_node(state: GraphState) -> Dict[str, Any]:
     guideline = get_guideline_prompt(cat)
     return {"guideline": guideline}
 
+
+
 def craft_response_node(state: GraphState) -> Dict[str, Any]:
-    messages = state["messages"]
-    recent = messages[-6:]
-    recent_history = "\n".join([
-        f"User: {m.content}" if isinstance(m, HumanMessage) else f"AI: {m.content}" 
-        for m in recent
-    ])
-    category = state["category"]
-    marks = state["marks"]
-    context = f"Category: {category}. Marks: {marks}." if marks else f"Category: {category}."
-    rag_context = state["rag_context"]
-    guideline = state["guideline"]
-    category_questions_count = state["category_questions_count"]
-    max_q = state["max_questions"]  # 5
-    progress = min(100, int((category_questions_count / max_q) * 100))
+    # --------------------------------------------------------------
+    # 1️⃣  History snapshot (max 6 turns, 30‑word each)
+    # --------------------------------------------------------------
+    MAX_TURNS = 6
+    recent = state["messages"][-MAX_TURNS:]
+    history_lines = []
+    for m in recent:
+        prefix = "User:" if isinstance(m, HumanMessage) else "AI:"
+        txt = " ".join(str(m.content).split()[:30])   # truncate to ~30 words
+        history_lines.append(f"{prefix} {txt}")
+    history_summary = "\n".join(history_lines)
 
-    full_prompt = f"""
-You are Zenark's empathetic counselor for teenagers. ALWAYS validate feelings and reference the conversation history to show you're listening. Vary your language and avoid repetitive phrases like 'It sounds like...'. Draw inspiration from these RAG examples to craft natural, diverse responses: {rag_context}
+    # --------------------------------------------------------------
+    # 2️⃣  Numeric helpers
+    # --------------------------------------------------------------
+    max_q_per_cat = state["max_questions"]               # usually 5
+    cat_q_cnt = state["category_questions_count"]
+    progress_pct = min(100, int((cat_q_cnt / max_q_per_cat) * 100))
 
-History Summary (recall and link to this):
-{recent_history}
+    # --------------------------------------------------------------
+    # 3️⃣  Flags for business rules
+    # --------------------------------------------------------------
+    can_probe      = progress_pct > 5                     # rule‑1
+    need_switch_q = cat_q_cnt >= max_q_per_cat            # rule‑2
 
-Latest: "{state['user_text']}"
-
-Topic: {category} issues.
-Context: {context}
-Guidelines: {guideline}
-
-Respond naturally (80-120 words):
-- Do not jump to conclusion about the child's mental state, until the {progress}%  is greater than 5%, until that point focus on building rapport and trust.
-- your response should be like a continuation of the conversation, based on History Summary, not a standalone answer.
-- Reference history explicitly (e.g., 'Building on what you said about the teacher call...').
-- Validate (use varied phrasing).
-- Reflect and ask one open question (e.g., 'What part of her response hurt the most?').
-- If user repeats or references 'before', recall specifically (e.g., 'You mentioned the exam results and mother's reaction earlier...').
-- Keep conversational; avoid repeating questions.
-- Celebrate their positive state with encouragement and praise.
-- Highlight strengths and habits they can continue.
-- Keep tone light, friendly, motivational, affirmational.
-- Avoid jargon and overly complex language and be age-appropriate for indian teenagers.
-- Use relatable examples and analogies that resonate with their experiences.
-- Incorporate elements of Indian culture and daily life to make the conversation more relevant.
-- The questions shouldn't feel like forced rather it should be natural and engaging.
-- Never repeat the same follow up question or phrase in the conversation.
-- If there is a single word answer like 'yes' or 'no' or 'okay' , then ask whether they would like to elaborate more on it or switch the topic
-
-
-- For high stress/anxiety: "Try a 5-minute deep breathing exercise to calm your
-mind."
-- For sadness/depression: "Take a moment to list three things you're grateful for today."
-- For anger/frustration: "Consider a quick walk outside to release some tension."
-- For neutral/positive: "Keep up the great work! Maybe take a short break to recharge."
-- For boredom: "Try switching tasks for a bit to re-engage your mind."
-- For excitement/happiness: "Share your positive energy with someone around you!"
-- For stress: "Take a moment to focus on your breath and relax your shoulders."
-- For loneliness: "Reach out to a friend or family member for a quick chat."
-- For confusion: "Take a short break and revisit the topic with a fresh mind."
-- For fatigue: "Try a brief stretch or a power nap to rejuvenate yourself."
-- For motivation dips: "Set a small, achievable goal to get back on track."
-- For overwhelm: "Break tasks into smaller steps and tackle them one at a time."
-- For calmness: "Enjoy this peaceful moment and maybe try a short meditation."
-
-
-If there is critical items show self-harm or suicidal thoughts,
-add: “If you are in crisis or thinking about self-harm, please call the National Suicide Prevention Helpline at +91 9152987821 (if you're in India) number.”
-Session progress: {progress}%
-
-
-"""
-    
-    continuation_prompt = ""
-    if category_questions_count % max_q == 0 and category_questions_count > 0:
-        # After every 5 questions, prompt for continuation or switch
-        suggested_next = "a related topic like peer relations or school stress"  # Simple suggestion; could LLM-derive
-        continuation_prompt = f"""
-You've reached {max_q} questions on this topic. Acknowledge the depth explored, then ask: 'We've talked a lot about this—shall we continue further, or would you like to explore {suggested_next} based on what you've shared?' End with an open question inviting their choice.
-Suggest the user to use zenark's mindfulness meditation or music or breathing exercises, tailored to the user's current emotional state at the end of the conversation.
-"""
-
-    full_prompt += continuation_prompt
-
-    input_length = len(state["user_text"].split())
-    if input_length < 10:
-        full_prompt += " Keep it concise (under 50 words): brief validation + one simple question. Avoid long explanations."
+    # --------------------------------------------------------------
+    # 4️⃣  Emotion tip (if any)
+    # --------------------------------------------------------------
+    scores: Dict[str, float] = state["emotion_scores"]
+    if scores:
+        top_emotion: str = max(scores, key=lambda k: scores[k])
+        tip: str = EMOTION_TIPS.get(top_emotion, "")
     else:
-        full_prompt += " Respond naturally (80-120 words): validate, reflect, and ask one question."
+        tip = ""
 
-    logger.debug(f"LLM Prompt (truncated): {full_prompt[:200]}...")
+    # --------------------------------------------------------------
+    # 5️⃣  **Moral‑risk pre‑filter** (dangerous intent)
+    # --------------------------------------------------------------
+    if detect_moral_risk(state["user_text"]):
+        moral_validation = "I hear that you’re feeling really upset right now."
+        moral_reflection = (
+            "Wanting to hurt someone isn’t okay – you’re a kind person and there are better ways to deal with those feelings."
+        )
+        moral_question = (
+            "Can you tell me what’s making you feel this way, or would you like to talk about a safer way to handle the situation?"
+        )
+        safe_text = f"{moral_validation} {moral_reflection} {moral_question}"
+        logger.info("Moral‑risk detected → returning safe handcrafted reply.")
+        return {"messages": [AIMessage(content=safe_text)]}
 
+    # --------------------------------------------------------------
+    # 6️⃣  **End‑chat pre‑filter** (goodbye / session close)
+    # --------------------------------------------------------------
+    if detect_end_intent(state["user_text"]):
+        goodbye_msg = (
+            "It’s been wonderful chatting with you! You’re doing great, and remember you can always stay positive. "
+            f"{ZEN_MODE_SUGGESTION} Take care and see you next time!"
+        )
+        logger.info("End‑intent detected → returning warm goodbye.")
+        return {"messages": [AIMessage(content=goodbye_msg)]}
+
+    # --------------------------------------------------------------
+    # 7️⃣  **Progress < 5 %** → simple rapport‑only response
+    # --------------------------------------------------------------
+    if not can_probe:
+        fallback = (
+            "I hear you. It sounds like you're dealing with something important. "
+            "What's on your mind right now?"
+        )
+        logger.info("Progress < 5% → returning built-in rapport response.")
+        return {"messages": [AIMessage(content=fallback)]}
+
+    # --------------------------------------------------------------
+    # 8️⃣  **Question limit reached** → ask about continuing or switching
+    # --------------------------------------------------------------
+    if need_switch_q:
+        switch_prompt = (
+            "We've talked a lot about this topic already. "
+            "Would you like to explore it a bit more, or would you prefer to talk about something else?"
+        )
+        logger.info("Question limit reached → returning switch-topic prompt.")
+        return {"messages": [AIMessage(content=switch_prompt)]}
+
+    # --------------------------------------------------------------
+    # 9️⃣  Build optional flag-in-prompt strings (kept for completeness)
+    # --------------------------------------------------------------
+    probe_instruction = (
+        "" if can_probe else
+        "Do NOT draw any conclusions about the child's mental state yet; focus only on listening and validating."
+    )
+    switch_instruction = (
+        "" if not need_switch_q else
+        "Ask the user whether they would like to elaborate more on this topic, "
+        "switch to a related topic, or continue the current conversation."
+    )
+
+    # --------------------------------------------------------------
+    # 🔟  Assemble the messages that go to the LLM
+    # --------------------------------------------------------------
+    messages: List[BaseMessage] = [
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(
+            content=USER_PROMPT.format(
+                max_turns=MAX_TURNS,
+                history_summary=history_summary,
+                user_text=state["user_text"],
+                category=state["category"],
+                progress_pct=progress_pct,
+                cat_q_cnt=cat_q_cnt,
+                max_q_per_cat=max_q_per_cat,
+                emotion_tip=tip,
+                guideline=state["guideline"],
+                probe_instruction=probe_instruction,
+                switch_instruction=switch_instruction,
+            )
+        ),
+    ]
+
+    # --------------------------------------------------------------
+    # 1️⃣1️⃣  Call the model → JSON parser → ZenarkResponse
+    # --------------------------------------------------------------
     try:
-        response_msg = llm.invoke([HumanMessage(content=full_prompt)])
-        response = response_msg.content
-        logger.debug(f"Raw LLM response: {response[:100]}...")
-    except Exception as e:
-        logger.exception(f"LLM error: {e}")
-        response = "I'm here to listen if you'd like to share more."
+        chain = (ChatOpenAI(model="gpt-4o-mini", temperature=0.7) | response_parser)
 
-    if isinstance(response, list):
-        # Join list elements into a single string if needed
-        response = " ".join(str(item) for item in response)
-    response = response.strip()
-    if len(response) < 20 or "don't know" in response.lower():
-        logger.warning("Regenerating poor response.")
-        regen_prompt = f"Empathize with '{state['user_text']}' ({category}). Validate and ask follow-up, inspired by RAG: {rag_context[:200]}."
-        if category_questions_count % max_q == 0 and category_questions_count > 0:
-            regen_prompt += f" Ask about continuing this topic or switching to {suggested_next}."
-        response_msg = llm.invoke([HumanMessage(content=regen_prompt)])
-        response = response_msg.content
-        if isinstance(response, list):
-            response = " ".join(str(item) for item in response)
-        response = response.strip()
+        raw = chain.invoke(messages)               # could be dict or ZenarkResponse
+        if isinstance(raw, ZenarkResponse):
+            result = raw
+        elif isinstance(raw, dict):
+            result = ZenarkResponse(**raw)
+        elif hasattr(raw, "content"):
+            parsed = response_parser.parse(raw.content)   # returns dict
+            result = ZenarkResponse(**parsed)
+        else:
+            raise RuntimeError(f"Unexpected LLM output type: {type(raw)}")
 
-    return {"messages": [AIMessage(content=response)]}
+        final_text = f"{result.validation} {result.reflection} {result.question}"
+        logger.debug(f"Structured response: {result.model_dump_json()}")
+    except Exception as exc:
+        logger.exception(f"LLM failed, falling back - {exc}")
+        final_text = (
+            "I'm here to listen. Could you tell me more about how you’re feeling?"
+        )
+
+    # --------------------------------------------------------------
+    # 1️⃣2️⃣  Return updated chat history
+    # --------------------------------------------------------------
+    return {"messages": [AIMessage(content=final_text)]}
+
 
 # Build the graph
 workflow = StateGraph(GraphState)
