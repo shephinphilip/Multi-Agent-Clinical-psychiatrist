@@ -35,8 +35,16 @@ def generate_autogen_report(conversation_text: str, name: str):
     planner = AssistantAgent(
         name="RoutinePlannerAgent",
         llm_config=llm_cfg,
-        system_message="Design a 7-day plan promoting self-care and social connection.",
+        system_message=(
+            "Design a 7‑day self‑care plan that includes: "
+            "1) daily activities for wellbeing and social connection, "
+            "2) a dedicated 'Strength + Growth Focus' block where the user leverages a personal strength "
+            "and works on a specific weakness, "
+            "3) a 'Zen Mode' suggestion (guided meditation, breathing exercise, or music) "
+            "tailored to the user's current emotional state at the end of the conversation."
+        ),
     )
+
 
     mgr = GroupChatManager(
         groupchat=GroupChat(agents=[therapist, data_analyst, planner], messages=[], max_round=3),
