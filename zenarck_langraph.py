@@ -480,6 +480,7 @@ Context: {context}
 Guidelines: {guideline}
 
 Respond naturally (80-120 words):
+- Do not jump to conclusion about the child's mental state, until the {progress}%  is greater than 5%, until that point focus on building rapport and trust.
 - your response should be like a continuation of the conversation, based on History Summary, not a standalone answer.
 - Reference history explicitly (e.g., 'Building on what you said about the teacher call...').
 - Validate (use varied phrasing).
