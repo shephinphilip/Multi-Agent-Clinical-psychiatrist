@@ -1,13 +1,18 @@
-# app.py
+# Zenark Mental Health AI Assistant
+# This program creates an empathetic AI counselor that can understand emotions,
+# provide supportive responses, and maintain helpful conversations with users.
+
+# Import necessary tools and libraries
 import os, re, json, torch, datetime, logging, numpy as np
 from typing import Annotated, Optional, List, Dict, Any, cast, TypedDict
-# from fastapi import FastAPI, Request
-# from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import sys
 from pymongo import MongoClient
 from sklearn.metrics.pairwise import cosine_similarity
+from contextlib import asynccontextmanager
 from transformers import pipeline
 from huggingface_hub import login
 from bson import ObjectId
@@ -25,27 +30,40 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage,SystemMessage
 from langchain_classic.chains import LLMChain
 from logging.handlers import RotatingFileHandler
-# from fastapi.middleware.cors import CORSMiddleware
-# from fastapi.encoders import jsonable_encoder
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
 from langchain_core.retrievers import BaseRetriever
 from langgraph.graph import StateGraph, END
 import operator
+import base64
+from langchain_openai import OpenAIEmbeddings
+import numpy as np
 from autogen_report import generate_autogen_report
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
 from prompt import SYSTEM_PROMPT, USER_PROMPT, EMOTION_TIPS,detect_end_intent,detect_moral_risk,ZEN_MODE_SUGGESTION,detect_self_harm
+from Guideliness import (
+        action_cognitive_guidelines, action_emotional_guidelines, action_developmental_guidelines,
+        action_environmental_guidelines, action_family_guidelines, action_medical_guidelines,
+        action_peer_guidelines, action_school_guidelines, action_social_support_guidelines,
+        action_opinon_guidelines, action_scoring_guidelines
+    )
 
-# app = FastAPI(title="Zenark Mental Health API", version="2.0", description="Empathetic AI counseling system with detailed logging.")
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"],  # or ["http://localhost:8501"]
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
+
+app = FastAPI(title="Zenark Mental Health API", version="2.0", description="Empathetic AI counseling system with detailed logging.")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # or ["http://localhost:8501"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ============================================================
-#  LOGGING CONFIGURATION (Unchanged)
+#  System Logging Setup
+#  This section sets up detailed record-keeping of the AI's activities,
+#  helping us track conversations and ensure everything works properly.
+#  Think of it like the AI's diary where it writes down what it does.
 # ============================================================
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -62,6 +80,32 @@ file_handler.setFormatter(formatter)
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(formatter)
 
+
+# ============================================================
+#  GLOBAL STATE FLAGS & SHARED OBJECTS
+# ============================================================
+initialized = False
+embedding_function = None
+emotion_classifier = None
+sentiment_classifier = None
+vectorstore = None
+positive_vectorstore = None
+RETRIEVER_MAIN = None
+RETRIEVER_POSITIVE = None
+
+
+# ============================================================
+# GLOBAL MODEL CLIENTS (reused across all nodes)
+# ============================================================
+
+# One shared LLM client for generation/adaptation
+LLM_MAIN = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+
+# One low-temperature variant for precision tasks (e.g. JSON, adaptation)
+LLM_LOW_TEMP = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
+
+similarity_embedder = OpenAIEmbeddings(model="text-embedding-3-small")
+
 try:
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
 except (AttributeError, ValueError):
@@ -74,7 +118,10 @@ logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
 # ============================================================
-#  ENVIRONMENT + INITIALIZATION (Unchanged)
+#  System Startup and Configuration
+#  Here we set up all the basic settings the AI needs to work,
+#  like loading security keys and making sure everything is ready to go.
+#  It's like preparing all the tools before starting a conversation.
 # ============================================================
 load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -85,7 +132,12 @@ logger.info("Server startup initiated.")
 logger.info(f"Environment loaded. HF_TOKEN={'set' if HF_TOKEN else 'missing'} | MONGO_URI={'set' if MONGO_URI else 'missing'}")
 
 # ============================================================
-#  DATABASE CONNECTION (Unchanged)
+#  Database Setup - The AI's Memory System
+#  This connects to our database where we store:
+#  - Conversation histories (like a counseling session record)
+#  - Student information (like academic records)
+#  - Generated reports (summaries of conversations)
+#  Think of it as the filing cabinet where we keep all important records.
 # ============================================================
 try:
     client = MongoClient(MONGO_URI)
@@ -99,7 +151,14 @@ except Exception as e:
     raise
 
 # ============================================================
-#  HUGGINGFACE LOGIN & MODEL LOADING (Unchanged)
+#  AI Brain Loading - Emotional Understanding Components
+#  Here we load specialized AI models that help our system:
+#  - Understand emotions in text (like detecting if someone is happy or sad)
+#  - Analyze the overall mood of messages (positive or negative)
+#  - Process language in a human-like way
+#  
+#  These are like different parts of the AI's brain, each helping it
+#  understand and respond to users in a more human and empathetic way.
 # ============================================================
 if HF_TOKEN:
     try:
@@ -130,8 +189,79 @@ except Exception as e:
     logger.exception(f"Model loading failed: {e}")
     raise
 
+# ============================================================
+#  INITIALIZATION FUNCTION
+# ============================================================
+def initialize_components():
+    """Runs once per process. Loads models, embeddings, and FAISS indexes."""
+    global initialized, embedding_function, emotion_classifier, sentiment_classifier
+    global vectorstore, positive_vectorstore, RETRIEVER_MAIN, RETRIEVER_POSITIVE
+
+    if initialized:
+        return
+
+    logger.info("🚀 Zenark initialization started.")
+
+    # 1️⃣  Hugging Face login
+    try:
+        if HF_TOKEN:
+            login(token=HF_TOKEN)
+            logger.info("Hugging Face login successful.")
+        else:
+            logger.warning("No HF_TOKEN provided — using public models only.")
+    except Exception as e:
+        logger.warning(f"HF login skipped: {e}")
+
+    # 2️⃣  Embeddings + classifiers
+    try:
+        embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+        emotion_classifier = pipeline(
+            "text-classification",
+            model="j-hartmann/emotion-english-distilroberta-base",
+            token=HF_TOKEN,
+            top_k=None,
+        )
+        sentiment_classifier = pipeline(
+            "text-classification",
+            model="distilbert-base-uncased-finetuned-sst-2-english",
+            token=HF_TOKEN,
+            device=-1
+        )
+        logger.info("Models loaded successfully.")
+    except Exception as e:
+        logger.critical(f"❌ Model initialization failed: {e}")
+        sys.exit(1)
+
+    # 3️⃣  Load FAISS indexes (no rebuild)
+    try:
+        if os.path.exists("faiss_zenark_index"):
+            vectorstore = FAISS.load_local(
+                "faiss_zenark_index", embedding_function, allow_dangerous_deserialization=True
+            )
+            RETRIEVER_MAIN = vectorstore.as_retriever(search_kwargs={"k": 5})
+            logger.info("Main FAISS index loaded.")
+        else:
+            logger.error("Main FAISS index missing. Run preprocessing pipeline first.")
+
+        if os.path.exists("faiss_positive_index"):
+            positive_vectorstore = FAISS.load_local(
+                "faiss_positive_index", embedding_function, allow_dangerous_deserialization=True
+            )
+            RETRIEVER_POSITIVE = positive_vectorstore.as_retriever(search_kwargs={"k": 5})
+            logger.info("Positive FAISS index loaded.")
+        else:
+            logger.warning("Positive FAISS index not found.")
+    except Exception as e:
+        logger.critical(f"❌ FAISS load failure: {e}")
+        sys.exit(1)
+
+    initialized = True
+    logger.info("✅ Zenark initialization completed successfully.")
 # ------------------------------------------------------------------
-# 1️⃣  Metadata collector (updated to include extra fields from positive.json)
+# Knowledge Base Setup
+# This section helps the AI learn from example conversations and responses.
+# It's like giving the AI a handbook of good counseling practices, showing
+# it how to respond empathetically in different situations.
 # ------------------------------------------------------------------
 
 # --------------------------------------------------------------
@@ -139,11 +269,17 @@ except Exception as e:
 # --------------------------------------------------------------
 def metadata_func(record: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Extract the fields we will need later and store them in the Document
-    metadata.  The loader will keep the *raw record* as page_content (a JSON
-    string) because we set `text_content=False`.  We only need the three
-    empathy fields for the vector store, so we also copy them into metadata.
-    Updated to include patient_context and psychiatrist_response for positive.json.
+    This function organizes information from our counseling examples database.
+    It's like creating index cards for each conversation example, noting:
+    - What type of situation it is (category)
+    - How a counselor should approach it (system guidance)
+    - What the person said (patient context)
+    - How the counselor responded (psychiatrist response)
+    - What questions were asked (empathic questions)
+    - How empathy was shown (empathic response)
+    - How to continue the conversation (next question)
+    
+    This helps the AI quickly find relevant examples when talking to users.
     """
     metadata.update({
         "id":                record.get("id"),
@@ -160,9 +296,16 @@ def metadata_func(record: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str,
 
 def embedding_content(record: Dict[str, Any]) -> str:
     """
-    Produce the short string that will be embedded.
-    We join the empathy fields with a pipe separator. Include patient_context and
-    psychiatrist_response if present (from positive.json) for richer embeddings.
+    This function combines different parts of a conversation example into one text.
+    It's like creating a summary that captures:
+    - What the person initially said
+    - How the counselor responded
+    - What questions were asked
+    - How empathy was shown
+    - What follow-up questions were used
+    
+    This summary helps the AI quickly find similar situations when talking to users.
+    It's like having a well-organized reference book of counseling experiences.
     """
     parts = [
         record.get("patient_context", ""),
@@ -231,6 +374,7 @@ try:
     # 4️⃣  Build the FAISS vector store (embeds the short strings)
     # ------------------------------------------------------------------
     vectorstore = FAISS.from_documents(docs, embedding_function)
+    RETRIEVER_MAIN = vectorstore.as_retriever(search_kwargs={"k": 5}) if vectorstore else None
     vectorstore.save_local("faiss_zenark_index")
     logger.info("FAISS index built and saved with metadata.")
 
@@ -296,6 +440,7 @@ try:
     if positive_docs:
         logger.info(f"Successfully processed {len(positive_docs)} positive documents into string content.")
         positive_vectorstore = FAISS.from_documents(positive_docs, embedding_function)
+        RETRIEVER_POSITIVE = positive_vectorstore.as_retriever(search_kwargs={"k": 5}) if positive_vectorstore else None
         positive_vectorstore.save_local("faiss_positive_index")
         logger.info("Positive FAISS index built and saved.")
     else:
@@ -333,12 +478,6 @@ categories = extract_categories_from_json(DATA_PATH)
 
 # Guidelines (assuming Guideliness.py exists; fallback if not)
 try:
-    from Guideliness import (
-        action_cognitive_guidelines, action_emotional_guidelines, action_developmental_guidelines,
-        action_environmental_guidelines, action_family_guidelines, action_medical_guidelines,
-        action_peer_guidelines, action_school_guidelines, action_social_support_guidelines,
-        action_opinon_guidelines  # Fixed spelling: opinion
-    )
     GUIDELINES = {
         "family_issues": action_family_guidelines,
         "school_stress": action_school_guidelines,
@@ -378,6 +517,42 @@ I'm concerned about what you've shared. For immediate help you can:
 Would you like more resources for your location?
 """
 
+class MongoChatMemory:
+    """
+    Synchronizes ChatMessageHistory with MongoDB in real time.
+    Maintains integrity between in-RAM and on-disk context.
+    """
+
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.history = ChatMessageHistory()
+        # Load existing session if present
+        doc = chats_col.find_one({"session_id": session_id})
+        if doc and "messages" in doc:
+            for msg in doc["messages"]:
+                if msg["role"] == "user":
+                    self.history.add_user_message(msg["content"])
+                elif msg["role"] == "assistant":
+                    self.history.add_ai_message(msg["content"])
+
+    def append_user(self, text: str):
+        self.history.add_user_message(text)
+        chats_col.update_one(
+            {"session_id": self.session_id},
+            {"$push": {"messages": {"role": "user", "content": text}}},
+            upsert=True,
+        )
+
+    def append_ai(self, text: str):
+        self.history.add_ai_message(text)
+        chats_col.update_one(
+            {"session_id": self.session_id},
+            {"$push": {"messages": {"role": "assistant", "content": text}}},
+            upsert=True,
+        )
+
+    def get_history(self) -> ChatMessageHistory:
+        return self.history
 
 # Tools (unchanged, but simplified - no full agent)
 @tool(
@@ -439,26 +614,14 @@ def fetch_marks_direct(student_name: str) -> str:
 
 logger.info("LCEL category chain initialized.")
 
-def retrieve_context(query, category, top_k=3, threshold=0.25):
-    if not CORPUS:
+def retrieve_context(query, category, top_k=3):
+    if not vectorstore:
         return []
-    
-    # Filter corpus by category for more relevant retrieval
-    if not category:
-        cat_corpus = CORPUS
-    else:
-        cat_corpus = [c for c in CORPUS if (category or "").lower() in c.lower()]
-    if not cat_corpus:
-        cat_corpus = CORPUS  # Fallback to full corpus
-    
-    # Embed filtered corpus
-    cat_emb = np.array([embedding_function.embed_query(text) for text in cat_corpus])
-    q_emb = np.array(embedding_function.embed_query(query)).reshape(1, -1)
-    
-    sims = cosine_similarity(q_emb, cat_emb)[0]
-    idxs = sims.argsort()[-top_k:][::-1]
-    contexts = [cat_corpus[i] for i in idxs if sims[i] >= threshold]
-    return contexts
+    results = vectorstore.similarity_search(query, k=top_k)
+    if category:
+        results = [r for r in results if category.lower() in r.metadata.get("category", "").lower()] or results
+    return [r.page_content for r in results]
+
 
 def get_guideline_prompt(category: str) -> str:
     mapped = CATEGORY_MAP.get(category, "emotional_distress")
@@ -503,25 +666,35 @@ def sentiment_node(state: GraphState) -> Dict[str, Any]:
     ])
     combined = recent_history + "\nUser: " + state["user_text"]
     try:
-        if 'sentiment_classifier' in globals():
+        if sentiment_classifier:
             result = sentiment_classifier(combined)
-            if isinstance(result, list) and len(result) > 0:
-                top = result[0]
-                label = top.get('label', '').upper()
-                score = top.get('score', 0.0)
-                if score < 0.6:  # <-- Add threshold; adjust as needed (e.g., 0.6 for balanced sensitivity)
-                    sentiment = "neutral"  # Or fallback to "negative" if you prefer caution
-                else:
-                    sentiment = "positive" if label == 'POSITIVE' else "negative"
+        else:
+            logger.warning("Sentiment classifier not initialized — skipping sentiment analysis.")
+            result = []
+
+        if isinstance(result, list) and len(result) > 0:
+            top = result[0]
+            label = top.get('label', '').upper()
+            score = top.get('score', 0.0)
+            if score < 0.75:  # adjust as needed
+                sentiment = "neutral"
             else:
-                sentiment = "negative"
+                sentiment = "positive" if label == 'POSITIVE' else "negative"
         else:
             sentiment = "negative"
+
     except Exception as e:
         logger.warning(f"Sentiment classification failed: {e}. Defaulting to negative.")
         sentiment = "negative"
-    logger.info(f"Sentiment classified as: {sentiment} (label: {label if 'label' in locals() else 'N/A'}, score: {score if 'score' in locals() else 'N/A'})")  # <-- Enhanced logging
+
+    logger.info(
+        f"Sentiment classified as: {sentiment} "
+        f"(label: {label if 'label' in locals() else 'N/A'}, "
+        f"score: {score if 'score' in locals() else 'N/A'})"
+    )
+
     return {"sentiment": sentiment}
+
 
 def suicide_check_node(state: GraphState) -> Dict[str, Any]:
     recent = state["messages"][-6:]
@@ -593,14 +766,37 @@ def classify_category(state: GraphState) -> Dict[str, Any]:
 def score_emotion_node(state: GraphState) -> Dict[str, Any]:
     text = state["user_text"]
     try:
-        scores = emotion_classifier(text)
-        if isinstance(scores, list) and len(scores) > 0 and isinstance(scores[0], list):
-            scores = scores[0]
-        emotion_dict = {item.get("label", "unknown"): round(item.get("score", 0.0), 4) for item in scores if isinstance(item, dict)}
+        if emotion_classifier:
+            scores = emotion_classifier(text)
+        else:
+            logger.warning("Emotion classifier not initialized — skipping emotion scoring.")
+            scores = []
     except Exception as e:
-        logger.warning(f"Emotion classification failed: {e}")
-        emotion_dict = {}
+        logger.warning(f"Emotion classification failed: {e}. Defaulting to empty result.")
+        scores = []
+
+    # Flatten nested list if needed
+    if isinstance(scores, list) and len(scores) > 0 and isinstance(scores[0], list):
+        scores = scores[0]
+
+    # Convert to dict of label → score
+    emotion_dict: dict[str, float] = {}
+    if isinstance(scores, list):
+        for item in scores:
+            if isinstance(item, dict) and "label" in item and "score" in item:
+                emotion_dict[item["label"].lower()] = round(float(item["score"]), 4)
+
+    # Pick top emotion safely
+    if emotion_dict:
+        emotion: str = max(emotion_dict.keys(), key=lambda k: emotion_dict[k])
+        confidence: float = emotion_dict[emotion]
+    else:
+        emotion, confidence = "neutral", 0.0
+
+
+    logger.info(f"Emotion detected: {emotion} (confidence={confidence:.2f})")
     return {"emotion_scores": emotion_dict}
+
 
 def should_fetch_marks(state: GraphState) -> str:
     combined_text = str(state["user_text"]).lower() + " " + " ".join([str(m.content).lower() if hasattr(m, 'content') else "" for m in state["messages"][-5:]])
@@ -613,12 +809,17 @@ def fetch_marks_node(state: GraphState) -> Dict[str, Any]:
     name = state["name"] or "Unknown"
     try:
         marks_str = fetch_marks_direct(name)
-        marks = marks_str if marks_str != "null" else None
-        logger.info(f"Marks fetched: {marks}")
+        if not marks_str or marks_str.strip().lower() in ("null", "none", ""):
+            marks = "didn't got marks"
+            logger.info(f"No marks found for {name}. Returning fallback message.")
+        else:
+            marks = marks_str
+            logger.info(f"Marks fetched for {name}: {marks}")
     except Exception as e:
-        logger.warning(f"Marks fetch failed: {e}. Skipping.")
-        marks = None
+        logger.warning(f"Marks fetch failed: {e}. Returning fallback message.")
+        marks = "didn't got marks"
     return {"marks": marks}
+
 
 def retrieve_rag_node(state: GraphState) -> Dict[str, Any]:
     category = state["category"]
@@ -653,7 +854,24 @@ def _build_adapt_prompt(
     base_next_q: str,
     pending_questions: Optional[List[str]] = None,
 ) -> str:
-    """Return the full prompt that asks the LLM to rewrite the three template fields."""
+    """
+    This function helps the AI personalize its responses for each user.
+    
+    It takes:
+    - The conversation history (what's been discussed)
+    - What the user just said
+    - Example responses from similar situations
+    - Questions that haven't been answered yet
+    
+    It's like a counselor reviewing their notes and similar cases before
+    responding, making sure to:
+    - Keep the response warm and understanding
+    - Show they remember what was discussed
+    - Ask relevant follow-up questions
+    - Address any topics that need more discussion
+    
+    This helps make each response feel personal and meaningful to the user.
+    """
     pending_str = "\n".join([f"- {q}" for q in (pending_questions or [])]) if pending_questions else ""
     pending_note = f"\n\nNote unanswered questions from history:\n{pending_str}" if pending_str else ""
     
@@ -800,6 +1018,7 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
     # 1️⃣  History snapshot (max 6 turns, 30‑word each)
     # ------------------------------------------------------------------
     MAX_TURNS = 6
+    user_text = state["user_text"]
     recent = state["messages"][-MAX_TURNS:]
     history_lines: List[str] = []
     pending_questions = []
@@ -810,6 +1029,41 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
         txt = " ".join(str(m.content).split()[:30])
         history_lines.append(f"{prefix} {txt}")
     history_summary = "\n".join(history_lines)
+
+    # ------------------------------------------------------------------
+    #  🔍 Fact alignment sanity check (robust for non-string content)
+    # ------------------------------------------------------------------
+    def is_context_aligned(history_summary: str, user_text: str, threshold: float = 0.65) -> bool:
+        """
+        Check semantic alignment between conversation history and latest user message.
+        Replaces old token/keyword heuristic with embedding similarity.
+        Returns True if the new message is semantically related enough to context.
+        """
+        if not history_summary or not user_text:
+            return True  # nothing to compare → safe default
+
+        try:
+            emb_history = similarity_embedder.embed_query(history_summary)
+            emb_user = similarity_embedder.embed_query(user_text)
+            similarity = np.dot(emb_history, emb_user) / (
+                np.linalg.norm(emb_history) * np.linalg.norm(emb_user)
+            )
+            return similarity >= threshold
+        except Exception as e:
+            # fail-safe: assume aligned rather than blocking conversation
+            logger.warning(f"Embedding similarity check failed: {e}")
+            return True
+        
+    # --------------------------------------------------------
+    #  FACTUAL / CONTEXT ALIGNMENT CHECK
+    # --------------------------------------------------------
+    if not is_context_aligned(history_summary, user_text):
+        logger.info("Low context alignment detected — resetting or clarifying context.")
+        clarification_msg = (
+            "I think I might have misunderstood earlier. Could you clarify what you meant just now?"
+        )
+        return {"messages": [AIMessage(content=clarification_msg)], "pending_questions": []}
+
 
     # Trim pending questions to last few
     pending_questions = pending_questions[-3:]
@@ -851,8 +1105,12 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
             # Create a retriever that returns the top‑k most similar docs.
             # We ask for a few candidates (k=5) so we can optionally filter by category.
 
-            retriever = cast(Any, vs.as_retriever(search_kwargs={"k": 5}))
-            candidate_docs = retriever.invoke(state["user_text"])
+            retriever = RETRIEVER_POSITIVE if is_positive else RETRIEVER_MAIN
+            if retriever is not None:
+                candidate_docs = retriever.invoke(state["user_text"])
+            else:
+                candidate_docs = []
+
 
             # For positive sentiment, skip category filtering to use any positive template.
             # For negative/default, filter by topic category.
@@ -903,12 +1161,14 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
         #   Call the model and parse the JSON.
         # ------------------------------------------------------------------
         adapt_parser = JsonOutputParser(pydantic_object=AdaptedEmpathy)
-
+        
+        
         try:
-            # The LLM returns an `AIMessage` (or sometimes a raw string).
-            raw_msg = ChatOpenAI(model="gpt-4o-mini", temperature=0.7).invoke(
+           # ✅ Correct usage
+            raw_msg = LLM_MAIN.invoke(
                 [SystemMessage(content=sys_prompt), HumanMessage(content=adapt_prompt)]
             )
+
 
             # ------------------------------------------------------------------
             #   Normalise the content to a plain string before feeding the parser.
@@ -934,7 +1194,7 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
             final_text = f"{adapted.adapted_response}\n\n{adapted.adapted_next_question}"
             # Optional citation line – mirrors the `ask_bot()` helper you showed.
             src_id = template_doc.metadata.get("id", "unknown")
-            final_text = f"{final_text}\n\nSource: [{src_id}]"
+            final_text = f"{adapted.adapted_response}\n\n{adapted.adapted_next_question}"
 
         except Exception as exc:
             # ------------------------------------------------------------------
@@ -994,7 +1254,7 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
     )
 
     # Generic chain that returns a ZenarkResponse (your original JSON schema)
-    generic_chain = (ChatOpenAI(model="gpt-4o-mini", temperature=0.7) | response_parser)
+    generic_chain = (LLM_MAIN | response_parser)
 
     try:
         raw = generic_chain.invoke([SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=user_prompt)])
@@ -1009,9 +1269,21 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
     except Exception as exc:
         logger.exception(f"Generic LLM failed: {exc}")
         final_text = "I’m here to listen. Could you tell me more about how you’re feeling?"
-
+        # Prevent repetitive questions from looping
+    if "pending_questions" in locals():
+        unique_recent = []
+        seen = set()
+        for q in pending_questions:
+            q_clean = q.strip().lower()
+            if q_clean not in seen and len(q_clean.split()) > 3:  # avoid tiny repeats
+                seen.add(q_clean)
+                unique_recent.append(q)
+        pending_questions = unique_recent[-3:]
+    else:
+        pending_questions = []
     # No source document for the generic path – return an empty list.
     return {"messages": [AIMessage(content=final_text)], "source_documents": [], "pending_questions": pending_questions}
+
 
 def positive_craft_response(state: GraphState) -> Dict[str, Any]:
     """
@@ -1055,8 +1327,13 @@ def positive_craft_response(state: GraphState) -> Dict[str, Any]:
 
     if positive_vectorstore is not None:
         try:
-            retriever = cast(Any, positive_vectorstore.as_retriever(search_kwargs={"k": 5}))
-            candidate_docs = retriever.invoke(state["user_text"])
+           # Correct retriever logic inside positive_craft_response
+            retriever = RETRIEVER_POSITIVE
+            if retriever is not None:
+                candidate_docs = retriever.invoke(state["user_text"])
+            else:
+                candidate_docs = []
+
             final_candidates = candidate_docs  # No filtering for positive
             logger.info(f"Positive retrieval: {len(candidate_docs)} candidates found for query '{state['user_text'][:50]}...' from positive vectorstore")
             if final_candidates:
@@ -1085,7 +1362,7 @@ def positive_craft_response(state: GraphState) -> Dict[str, Any]:
         adapt_parser = JsonOutputParser(pydantic_object=AdaptedEmpathy)
 
         try:
-            raw_msg = ChatOpenAI(model="gpt-4o-mini", temperature=0.1).invoke(  # Lower temp for reliability
+            raw_msg = LLM_LOW_TEMP.invoke(  # Lower temp for reliability
                 [SystemMessage(content=sys_prompt), HumanMessage(content=adapt_prompt)]
             )
 
@@ -1220,15 +1497,34 @@ def safe_json(o):
 # Store for session histories
 store = {}
 
-def get_session_history(session_id: str) -> ChatMessageHistory:
-    if session_id not in store:
-        store[session_id] = ChatMessageHistory()
-    return store[session_id]
+def get_session_history(session_id: str):
+    """
+    Fetch or initialize persistent chat history for this session.
+    Loads from MongoDB on demand and syncs every message automatically.
+    """
+    memory = MongoChatMemory(session_id)
+    return memory.get_history()
 
 # ============================================================
 #  CORE RESPONSE LOGIC (LangGraph Integration)
 # ============================================================
 def generate_response(user_text: str, name: Optional[str] = None, question_index=1, max_questions=5, session_id: str = "default"):
+    """
+    This is the main function that creates responses to what users say.
+    
+    How it works:
+    1. Gets ready to respond (like a counselor preparing to listen)
+    2. Notes who it's talking to and keeps track of the conversation
+    3. Makes sure it remembers the discussion history
+    4. Creates a personalized, empathetic response
+    
+    It's designed to:
+    - Be supportive and understanding
+    - Remember previous conversations
+    - Ask helpful questions
+    - Keep track of how the conversation is going
+    - Notice if someone needs immediate help
+    """
     start_time = datetime.datetime.now()
     safe_name = name or "Unknown"
     logger.info(f"Generating response | user={safe_name} | session={session_id} | text='{user_text[:80]}'")
@@ -1236,7 +1532,9 @@ def generate_response(user_text: str, name: Optional[str] = None, question_index
     if not user_text:
         return "Could you share a bit more about how you're feeling?"
 
-    history = get_session_history(session_id)
+    memory = MongoChatMemory(session_id)
+    history = memory.get_history()
+    memory.append_user(user_text)
     user_msg = HumanMessage(content=user_text)
     history.add_message(user_msg)
 
@@ -1274,27 +1572,47 @@ def generate_response(user_text: str, name: Optional[str] = None, question_index
     logger.info(f"Response generated | category={category} | cat_count={cat_count} | progress={progress}% | invoke_time={elapsed_invoke:.2f}s | total_time={elapsed:.2f}s | len={len(response)} chars")
     return response
 
-def save_conversation(conversation, user_name: Optional[str], session_id: str = "default"):
+def save_conversation(conversation, user_name: Optional[str], session_id: str = "default", id: Optional[str] = None, token: Optional[str] = None):
+    """
+    This function saves the complete conversation record, like keeping detailed
+    counseling session notes. For each conversation, it:
+    
+    1. Records what was said (by both user and AI)
+    2. Analyzes the emotions expressed
+    3. Stores everything safely in our database
+    4. Creates a backup file for extra safety
+    
+    This helps us:
+    - Keep track of each person's progress
+    - Review conversations to improve our responses
+    - Make sure we remember important details
+    - Generate helpful reports when needed
+    """
     logger.info(f"Saving conversation for user={user_name} | session={session_id}")
     analyzed_conversation = []
     for turn in conversation:
-        if "user" in turn:
-            text = turn["user"]
-            try:
-                scores = emotion_classifier(text)
-                if isinstance(scores, list) and isinstance(scores[0], list):
-                    scores = scores[0]
-                emotion_dict = {item.get("label", "unknown"): round(item.get("score", 0.0), 4) for item in scores if isinstance(item, dict)}
-                turn["emotion_scores"] = emotion_dict
-            except Exception as e:
-                logger.warning(f"Emotion classification failed: {e}")
-                turn["emotion_scores"] = {"error": str(e)}
+        # if "user" in turn:
+        #     text = turn["user"]
+        #     try:
+        #         scores = emotion_classifier(text)
+        #         if isinstance(scores, list) and isinstance(scores[0], list):
+        #             scores = scores[0]
+        #         emotion_dict = {item.get("label", "unknown"): round(item.get("score", 0.0), 4) for item in scores if isinstance(item, dict)}
+        #         turn["emotion_scores"] = emotion_dict
+        #     except Exception as e:
+        #         logger.warning(f"Emotion classification failed: {e}")
+        #         turn["emotion_scores"] = {"error": str(e)}
         analyzed_conversation.append(turn)
 
+    user_id = ObjectId(id) if id else None
+    print(id)
+    print(analyzed_conversation)
     record = {
         "name": user_name or "Unknown",
         "conversation": analyzed_conversation,
         "timestamp": datetime.datetime.now(),
+        "userId":user_id,
+        "token":token
     }
 
     try:
@@ -1313,6 +1631,24 @@ def save_conversation(conversation, user_name: Optional[str], session_id: str = 
 
 
 def generate_report(name: str):
+    """
+    This function creates a detailed summary report of someone's conversations with the AI.
+    
+    It works like this:
+    1. Finds the most recent conversation for the person
+    2. Reviews everything that was discussed
+    3. Creates a helpful summary that shows:
+       - Main topics discussed
+       - Emotional patterns noticed
+       - Progress made
+       - Areas that might need more attention
+    
+    This is like a counselor writing up session notes to:
+    - Track someone's progress over time
+    - Identify important themes or concerns
+    - Help plan future conversations
+    - Provide insights about what's helping most
+    """
     record = db["chat_sessions"].find_one({"name": name}, sort=[("_id", -1)])
     if not record:
         return {"error": f"No conversation found for {name}"}
@@ -1324,89 +1660,193 @@ def generate_report(name: str):
 # # ============================================================
 # #  SCHEMAS
 # # ============================================================
-# class ChatRequest(BaseModel):
-#     text: str
-#     name: Optional[str] = None
-#     question_index: int = 1
-#     max_questions: int = 5  # Updated default to 5
-#     session_id: str = "default"  # New: for per-session memory
+class ChatRequest(BaseModel):
+    text: str
+    name: Optional[str] = None
+    question_index: int = 1
+    max_questions: int = 5  # Updated default to 5
+    session_id: str = "default"  # New: for per-session memory
 
-# class SaveRequest(BaseModel):
-#     conversation: List[Dict]
-#     name: Optional[str] = None
-#     session_id: str = "default"
+class SaveRequest(BaseModel):
+    conversation: List[Dict]
+    name: Optional[str] = None
+    session_id: str = "default"
+    token: Optional[str] = None
 
 
-# class ReportRequest(BaseModel):
-#     name: str
+class ReportRequest(BaseModel):
+    name: str
 
 
 # ============================================================
 #  MIDDLEWARE & ENDPOINTS
 # ============================================================
-# @app.middleware("http")
-# async def log_requests(request: Request, call_next):
-#     start = datetime.datetime.now()
-#     logger.info(f"Request start | {request.method} {request.url.path}")
-#     try:
-#         response = await call_next(request)
-#     except Exception as e:
-#         logger.exception(f"Unhandled error during {request.url.path}: {e}")
-#         return JSONResponse(status_code=500, content={"error": "Internal Server Error"})
-#     duration = (datetime.datetime.now() - start).total_seconds()
-#     logger.info(f"Request end | {request.method} {request.url.path} | {duration:.2f}s | Status={response.status_code}")
-#     return response
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = datetime.datetime.now()
+    logger.info(f"Request start | {request.method} {request.url.path}")
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        logger.exception(f"Unhandled error during {request.url.path}: {e}")
+        return JSONResponse(status_code=500, content={"error": "Internal Server Error"})
+    duration = (datetime.datetime.now() - start).total_seconds()
+    logger.info(f"Request end | {request.method} {request.url.path} | {duration:.2f}s | Status={response.status_code}")
+    return response
 
-# @app.get("/health")
-# def health_check():
-#     logger.info("Health check pinged.")
-#     return {"status": "ok", "time": datetime.datetime.now().isoformat()}
-
-# @app.post("/chat")
-# def chat_endpoint(req: ChatRequest):
-#     safe_name = req.name or "Unknown"  # Handle None for logging
-#     response = generate_response(req.text, req.name, req.question_index, req.max_questions, req.session_id)
-#     logger.info(f"Chat response returned to user={safe_name} | session={req.session_id}")
-#     return {"response": response}
-
-# @app.post("/save_chat")
-# def save_chat_endpoint(req: SaveRequest):
-#     record = save_conversation(req.conversation, req.name, req.session_id)
-#     return JSONResponse(content=jsonable_encoder(record))
+@app.get("/health")
+def health_check():
+    logger.info("Health check pinged.")
+    return {"status": "ok", "time": datetime.datetime.now().isoformat()}
 
 
-# @app.post("/generate_report")
-# def generate_report_endpoint(req: ReportRequest):
-#     """Generate and store a multi-agent reflective report from user's latest conversation."""
-#     try:
-#         record = db["chat_sessions"].find_one({"name": req.name}, sort=[("_id", -1)])
-#         if not record or "conversation" not in record:
-#             return JSONResponse(status_code=404, content={"error": f"No conversation found for {req.name}"})
+# ============================================================
+#  FASTAPI LIFECYCLE HOOKS
+# ============================================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    initialize_components()
+    yield
+    # Shutdown
+    logger.info("🧩 Shutting down Zenark API gracefully.")
 
-#         conv_text = []
-#         for t in record["conversation"]:
-#             user_msg = t.get("user", "")
-#             ai_msg = t.get("ai", "")
-#             if user_msg or ai_msg:
-#                 conv_text.append(f"User: {user_msg}\nAI: {ai_msg}")
-#         conv_text = "\n".join(conv_text)
 
-#         report_data = generate_autogen_report(conv_text, req.name)
-#         insert_result = reports_col.insert_one(report_data)
-#         report_data["_id"] = insert_result.inserted_id
 
-#         # Convert ObjectId -> str before returning
-#         safe_report = convert_objectid(report_data)
-#         return JSONResponse(content=safe_report)
+@app.post("/chat")
+async def chat(request: Request):
+    data = await request.json()
+    session_id = data.get("session_id", "anonymous")
+    user_text = data["message"]
 
-#     except Exception as e:
-#         logger.exception(f"Report generation failed: {e}")
-#         return JSONResponse(status_code=500, content={"error": str(e)})
+    # Load persistent session
+    memory = MongoChatMemory(session_id)
+
+    # Store user input immediately
+    memory.append_user(user_text)
+
+    # Generate the AI response using your existing pipeline
+    ai_response = generate_response(user_text, name=data.get("name"), session_id=session_id)
+
+    # Store the AI message immediately
+    memory.append_ai(ai_response)
+
+    return {"response": ai_response}
+
+
+@app.post("/save_chat")
+def save_chat_endpoint(req: SaveRequest):
+    print(req)
+    jwt_token = req.token
+    payload = decode_jwt(jwt_token)
+    user_id = payload.get("id")
+    record = save_conversation(req.conversation, req.name, req.session_id,user_id,jwt_token)
+    return JSONResponse(content=jsonable_encoder(record))
+
+@app.post("/generate_report")
+def generate_report_endpoint(req: ReportRequest):
+    """Generate and store a full Zenark multi-agent report."""
+    try:
+        record = db["chat_sessions"].find_one({"session_id": req.name}, sort=[("_id", -1)])
+        if not record or "conversation" not in record:
+            return JSONResponse(status_code=404, content={"error": f"No conversation found for {req.name}"})
+
+        # Build linear text for context
+        conv_text = []
+        for t in record["conversation"]:
+            user_msg = t.get("user", "")
+            ai_msg = t.get("ai", "")
+            if user_msg or ai_msg:
+                conv_text.append(f"User: {user_msg}\nAI: {ai_msg}")
+        conv_text = "\n".join(conv_text)
+
+        # Generate full structured report
+        report_data = generate_autogen_report(conv_text, req.name)
+
+        inserted = reports_col.insert_one(report_data)
+        report_data["_id"] = str(inserted.inserted_id)
+
+        return JSONResponse(content=report_data)
+
+    except Exception as e:
+        logger.exception(f"Report generation failed: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+
+@app.post("/score_conversation")
+async def score_conversation(request: Request):
+    """
+    Analyze an entire conversation history and return a Global Distress Score (1–10)
+    following the action_scoring_guidelines.
+    """
+    data = await request.json()
+    session_id = data.get("session_id")
+    if not session_id:
+        return {"error": "Missing session_id"}
+
+    # Load the full session conversation
+    memory = MongoChatMemory(session_id)
+    history = memory.get_history()
+
+    if not history.messages:
+        return {"error": "No conversation found for this session."}
+
+    # Summarize the conversation into plain text
+    conversation_summary = "\n".join(
+        [f"{msg.type.upper()}: {msg.content}" for msg in history.messages]
+    )
+
+    # Build the scoring prompt
+    scoring_prompt = f"""{action_scoring_guidelines}
+
+Conversation SUMMARY:
+{conversation_summary}
+
+Return only a single integer (1–10) as the Global Distress Score."""
+    
+    # Low-temperature deterministic LLM call
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    result = llm.invoke(scoring_prompt)
+
+    # Extract numeric score safely
+    try:
+        # Normalize model output into plain text
+        content = result.content
+        if isinstance(content, list):
+            # Flatten if the model returned tokens or dicts
+            content = " ".join(
+                [item["text"] if isinstance(item, dict) and "text" in item else str(item) for item in content]
+            )
+        elif not isinstance(content, str):
+            content = str(content)
+
+        score_text = content.strip()
+        score = int("".join(ch for ch in score_text if ch.isdigit()))
+        if not (1 <= score <= 10):
+            raise ValueError
+    except Exception:
+        return {"error": f"Invalid score output: {result.content}"}
+
+    return {"session_id": session_id, "global_distress_score": score}
+
+def decode_jwt(token):
+    # Split token into parts
+    header, payload, signature = token.split('.')
+    
+    # Add padding for Base64 decoding
+    padded_payload = payload + '=' * (-len(payload) % 4)
+    
+    # Decode and parse JSON
+    decoded_bytes = base64.urlsafe_b64decode(padded_payload)
+    payload_data = json.loads(decoded_bytes)
+    
+    return payload_data
 
 
 # ============================================================
 #  MAIN ENTRYPOINT
 # ============================================================
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True, log_config=None)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True, log_config=None)
