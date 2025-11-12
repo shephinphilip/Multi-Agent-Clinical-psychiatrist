@@ -16,3 +16,5 @@ scikit-learn
 pyautogen 
 autogen
 jq
+fastapi-limiter
+fastapi-cache2
