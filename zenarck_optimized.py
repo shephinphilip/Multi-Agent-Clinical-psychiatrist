@@ -245,7 +245,7 @@ load_dotenv()
 load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
-REDIS_URI = os.getenv("REDIS_URI", "redis://localhost:6379")  # NEW: Redis for caching
+# REDIS_URI = os.getenv("REDIS_URI", "redis://localhost:6379")  # NEW: Redis for caching
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 logger.info("Server startup initiated.")
@@ -296,7 +296,7 @@ try:
     )
     sentiment_classifier = pipeline(
         "text-classification",
-        model="distilbert-base-uncased-finetuned-sst-2-english",  # <-- Replace here
+        model="distilbert-base-uncased-finetuned-sst-2-english", 
         token=HF_TOKEN,
         device=-1  # CPU-only
     )
@@ -360,77 +360,168 @@ async def async_pipeline_infer(pipeline, text: str) -> List[Dict[str, Any]]:
 # ============================================================
 #  INITIALIZATION FUNCTION
 # ============================================================
-def initialize_components():
-    """Runs once per process. Loads models, embeddings, and FAISS indexes."""
-    global initialized, embedding_function, emotion_classifier, sentiment_classifier
-    global vectorstore, positive_vectorstore, RETRIEVER_MAIN, RETRIEVER_POSITIVE
+# def initialize_components():
+#     """Runs once per process. Loads models, embeddings, and FAISS indexes."""
+#     global initialized, embedding_function, emotion_classifier, sentiment_classifier
+#     global vectorstore, positive_vectorstore, RETRIEVER_MAIN, RETRIEVER_POSITIVE
 
-    if initialized:
-        return
+#     if initialized:
+#         return
 
-    logger.info("🚀 Zenark initialization started.")
+#     logger.info("🚀 Zenark initialization started.")
 
-    # 1️⃣  Hugging Face login
-    try:
-        if HF_TOKEN:
-            login(token=HF_TOKEN)
-            logger.info("Hugging Face login successful.")
-        else:
-            logger.warning("No HF_TOKEN provided — using public models only.")
-    except Exception as e:
-        logger.warning(f"HF login skipped: {e}")
+#     # 1️⃣  Hugging Face login
+#     try:
+#         if HF_TOKEN:
+#             login(token=HF_TOKEN)
+#             logger.info("Hugging Face login successful.")
+#         else:
+#             logger.warning("No HF_TOKEN provided — using public models only.")
+#     except Exception as e:
+#         logger.warning(f"HF login skipped: {e}")
 
-    # 2️⃣  Embeddings + classifiers
-    try:
-        embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
-        emotion_classifier = pipeline(
-            "text-classification",
-            model="j-hartmann/emotion-english-distilroberta-base",
-            token=HF_TOKEN,
-            top_k=None,
-        )
-        sentiment_classifier = pipeline(
-            "text-classification",
-            model="distilbert-base-uncased-finetuned-sst-2-english",
-            token=HF_TOKEN,
-            device=-1
-        )
-        logger.info("Models loaded successfully.")
-    except Exception as e:
-        logger.critical(f"❌ Model initialization failed: {e}")
-        sys.exit(1)
+#     # 2️⃣  Embeddings + classifiers
+#     try:
+#         embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+#         emotion_classifier = pipeline(
+#             "text-classification",
+#             model="j-hartmann/emotion-english-distilroberta-base",
+#             token=HF_TOKEN,
+#             top_k=None,
+#         )
+#         sentiment_classifier = pipeline(
+#             "text-classification",
+#             model="distilbert-base-uncased-finetuned-sst-2-english",
+#             token=HF_TOKEN,
+#             device=-1
+#         )
+#         logger.info("Models loaded successfully.")
+#     except Exception as e:
+#         logger.critical(f"❌ Model initialization failed: {e}")
+#         sys.exit(1)
 
-    # 3️⃣  Load FAISS indexes (no rebuild)
-    try:
-        if os.path.exists("faiss_zenark_index"):
-            vectorstore = FAISS.load_local(
-                "faiss_zenark_index", embedding_function, allow_dangerous_deserialization=True
-            )
-            RETRIEVER_MAIN = vectorstore.as_retriever(search_kwargs={"k": 5})
-            logger.info("Main FAISS index loaded.")
-        else:
-            logger.error("Main FAISS index missing. Run preprocessing pipeline first.")
+#     # 3️⃣  Load FAISS indexes (no rebuild)
+#     try:
+#         if os.path.exists("faiss_zenark_index"):
+#             vectorstore = FAISS.load_local(
+#                 "faiss_zenark_index", embedding_function, allow_dangerous_deserialization=True
+#             )
+#             RETRIEVER_MAIN = vectorstore.as_retriever(search_kwargs={"k": 5})
+#             logger.info("Main FAISS index loaded.")
+#         else:
+#             logger.error("Main FAISS index missing. Run preprocessing pipeline first.")
 
-        if os.path.exists("faiss_positive_index"):
-            positive_vectorstore = FAISS.load_local(
-                "faiss_positive_index", embedding_function, allow_dangerous_deserialization=True
-            )
-            RETRIEVER_POSITIVE = positive_vectorstore.as_retriever(search_kwargs={"k": 5})
-            logger.info("Positive FAISS index loaded.")
-        else:
-            logger.warning("Positive FAISS index not found.")
-    except Exception as e:
-        logger.critical(f"❌ FAISS load failure: {e}")
-        sys.exit(1)
+#         if os.path.exists("faiss_positive_index"):
+#             positive_vectorstore = FAISS.load_local(
+#                 "faiss_positive_index", embedding_function, allow_dangerous_deserialization=True
+#             )
+#             RETRIEVER_POSITIVE = positive_vectorstore.as_retriever(search_kwargs={"k": 5})
+#             logger.info("Positive FAISS index loaded.")
+#         else:
+#             logger.warning("Positive FAISS index not found.")
+#     except Exception as e:
+#         logger.critical(f"❌ FAISS load failure: {e}")
+#         sys.exit(1)
 
-    initialized = True
-    logger.info("✅ Zenark initialization completed successfully.")
+#     initialized = True
+#     logger.info("✅ Zenark initialization completed successfully.")
 # ------------------------------------------------------------------
 # Knowledge Base Setup
 # This section helps the AI learn from example conversations and responses.
 # It's like giving the AI a handbook of good counseling practices, showing
 # it how to respond empathetically in different situations.
 # ------------------------------------------------------------------
+
+# ============================================================
+#  INTELLIGENT FAISS INDEX MANAGEMENT
+#  Only re-embed and upload data if JSON files have changed
+# ============================================================
+import hashlib
+
+def compute_file_hash(file_path: str) -> str:
+    """Compute SHA256 hash of a file for change detection"""
+    sha256_hash = hashlib.sha256()
+    try:
+        with open(file_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
+    except Exception as e:
+        logger.warning(f"Could not compute hash for {file_path}: {e}")
+        return ""
+
+def load_or_create_index_metadata(index_type: str = "main") -> Dict[str, Any]:
+    """
+    Load metadata about the FAISS index (file hash, count, last updated).
+    This helps us detect if the source JSON has changed since last embedding.
+    """
+    metadata_file = f"faiss_{index_type}_index/index_metadata.json"
+    try:
+        if os.path.exists(metadata_file):
+            with open(metadata_file, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        logger.warning(f"Could not load index metadata from {metadata_file}: {e}")
+    
+    # Return default (empty) metadata if file doesn't exist
+    return {
+        "file_hash": "",
+        "document_count": 0,
+        "last_updated": None,
+        "data_path": "",
+        "version": 1
+    }
+
+def save_index_metadata(metadata: Dict[str, Any], index_type: str = "main") -> None:
+    """Save metadata about the FAISS index for future checks"""
+    metadata_file = f"faiss_{index_type}_index/index_metadata.json"
+    try:
+        os.makedirs(os.path.dirname(metadata_file), exist_ok=True)
+        with open(metadata_file, "w") as f:
+            json.dump(metadata, f, indent=2, default=str)
+        logger.info(f"Saved index metadata to {metadata_file}")
+    except Exception as e:
+        logger.error(f"Could not save index metadata: {e}")
+
+def index_needs_update(data_path: str, index_type: str = "main") -> bool:
+    """
+    Check if the FAISS index needs updating.
+    Returns True if:
+    - Index doesn't exist
+    - Source JSON file hash changed (new data)
+    - JSON file is newer than index
+    """
+    # Check if index exists
+    index_dir = f"faiss_{index_type}_index"
+    if not os.path.exists(os.path.join(index_dir, "index.faiss")):
+        logger.info(f"FAISS index not found at {index_dir}. Will create new index.")
+        return True
+    
+    # Check if source file exists
+    if not os.path.exists(data_path):
+        logger.warning(f"Data file not found: {data_path}")
+        return False
+    
+    # Load stored metadata
+    stored_metadata = load_or_create_index_metadata(index_type)
+    stored_hash = stored_metadata.get("file_hash", "")
+    
+    # Compute current file hash
+    current_hash = compute_file_hash(data_path)
+    
+    if not current_hash:
+        logger.warning("Could not compute file hash; assuming index is up-to-date")
+        return False
+    
+    if stored_hash != current_hash:
+        logger.info(
+            f"JSON file hash changed: stored={stored_hash[:8]}... "
+            f"current={current_hash[:8]}... NEW DATA DETECTED!"
+        )
+        return True
+    
+    logger.info(f"JSON file hash unchanged. Index is up-to-date ({index_type}).")
+    return False
 
 # --------------------------------------------------------------
 #  LOAD / PRE‑PROCESS THE DATASET
@@ -487,135 +578,215 @@ def embedding_content(record: Dict[str, Any]) -> str:
 
 DATA_PATH = "combined_dataset.json"
 
-try:
-    # ------------------------------------------------------------------
-    # 1️⃣  Load the JSON.  `text_content=False` → loader returns the whole
-    #     JSON object as a string in `doc.page_content`.  All fields we need
-    #     are captured in `metadata` by `metadata_func`.
-    # ------------------------------------------------------------------
-    loader = JSONLoader(
-        file_path=DATA_PATH,
-        jq_schema=".dataset[]",          # each element of the top‑level list
-        metadata_func=metadata_func,
-        text_content=False,              # keep raw dict (as JSON string) -> we ignore it
-    )
-    raw_docs: List[Document] = loader.load()
-    logger.info(f"Loaded {len(raw_docs)} raw empathy documents.")
+# Check if index needs updating before loading/embedding
+vectorstore = None
+RETRIEVER_MAIN = None
+docs = []
+CORPUS = []
+CORPUS_EMB = torch.tensor([])
 
-    # ------------------------------------------------------------------
-    # 2️⃣  Build the *embedding* string from the metadata we already have.
-    # ------------------------------------------------------------------
-    docs: List[Document] = []
-    for doc in raw_docs:
-        try:
-            # All the fields we need are already in the metadata dict.
-            # No need to parse `doc.page_content` – we just read from `doc.metadata`.
-            record = {
-                "patient_context": doc.metadata.get("patient_context", ""),
-                "psychiatrist_response": doc.metadata.get("psychiatrist_response", ""),
-                "empathic_question": doc.metadata.get("empathic_question", ""),
-                "empathic_response": doc.metadata.get("empathic_response", ""),
-                "next_question":     doc.metadata.get("next_question",      ""),
-            }
-            # Replace the page_content with the short pipe‑separated string.
-            doc.page_content = embedding_content(record)
-            docs.append(doc)
-        except Exception as inner_e:
-            logger.warning(
-                f"Failed to process doc {doc.metadata.get('id','unknown')}: {inner_e}"
-            )
-            continue
+if not index_needs_update(DATA_PATH, index_type="zenark"):
+    # ✅ Index exists and is up-to-date → Load from disk (FAST!)
+    logger.info("✅ Loading FAISS index from disk (no re-embedding needed)...")
+    try:
+        vectorstore = FAISS.load_local("faiss_zenark_index", embedding_function)
+        RETRIEVER_MAIN = vectorstore.as_retriever(search_kwargs={"k": 5})
+        
+        # Load metadata for document count verification
+        stored_metadata = load_or_create_index_metadata("zenark")
+        doc_count = stored_metadata.get("document_count", 0)
+        logger.info(f"✅ FAISS index loaded successfully with {doc_count} documents.")
+        
+    except Exception as e:
+        logger.error(f"Failed to load FAISS index from disk: {e}. Will rebuild...")
+        vectorstore = None
 
-    # ------------------------------------------------------------------
-    # 3️⃣  sanity‑check output (you can delete these prints in prod)
-    # ------------------------------------------------------------------
-    if docs:
-        logger.info(f"Successfully processed {len(docs)} documents into string content.")
-        print("\n--- Sample document after processing --------------------------------")
-        print(f"page_content (first 120 chars): {docs[0].page_content[:120]}...")
-        print(f"metadata (first doc): {docs[0].metadata}")
-    else:
-        logger.error("No valid documents processed – check the JSON structure or jq_schema.")
-        raise RuntimeError("Dataset processing yielded zero documents")
+if vectorstore is None:
+    # ❌ Index doesn't exist or is outdated → Rebuild from JSON (SLOWER)
+    logger.info("🔄 FAISS index outdated or missing. Rebuilding from JSON...")
+    
+    try:
+        # ------------------------------------------------------------------
+        # 1️⃣  Load the JSON.  `text_content=False` → loader returns the whole
+        #     JSON object as a string in `doc.page_content`.  All fields we need
+        #     are captured in `metadata` by `metadata_func`.
+        # ------------------------------------------------------------------
+        loader = JSONLoader(
+            file_path=DATA_PATH,
+            jq_schema=".dataset[]",          # each element of the top‑level list
+            metadata_func=metadata_func,
+            text_content=False,              # keep raw dict (as JSON string) -> we ignore it
+        )
+        raw_docs: List[Document] = loader.load()
+        logger.info(f"Loaded {len(raw_docs)} raw empathy documents from JSON.")
 
-    # ------------------------------------------------------------------
-    # 4️⃣  Build the FAISS vector store (embeds the short strings)
-    # ------------------------------------------------------------------
-    vectorstore = FAISS.from_documents(docs, embedding_function)
-    RETRIEVER_MAIN = vectorstore.as_retriever(search_kwargs={"k": 5}) if vectorstore else None
-    vectorstore.save_local("faiss_zenark_index")
-    logger.info("FAISS index built and saved with metadata.")
+        # ------------------------------------------------------------------
+        # 2️⃣  Build the *embedding* string from the metadata we already have.
+        # ------------------------------------------------------------------
+        docs: List[Document] = []
+        for doc in raw_docs:
+            try:
+                # All the fields we need are already in the metadata dict.
+                # No need to parse `doc.page_content` – we just read from `doc.metadata`.
+                record = {
+                    "patient_context": doc.metadata.get("patient_context", ""),
+                    "psychiatrist_response": doc.metadata.get("psychiatrist_response", ""),
+                    "empathic_question": doc.metadata.get("empathic_question", ""),
+                    "empathic_response": doc.metadata.get("empathic_response", ""),
+                    "next_question":     doc.metadata.get("next_question",      ""),
+                }
+                # Replace the page_content with the short pipe‑separated string.
+                doc.page_content = embedding_content(record)
+                docs.append(doc)
+            except Exception as inner_e:
+                logger.warning(
+                    f"Failed to process doc {doc.metadata.get('id','unknown')}: {inner_e}"
+                )
+                continue
 
-    # ------------------------------------------------------------------
-    # 5️⃣  (Optional) Build a *corpus* for cheap cosine‑similarity fallback.
-    #     This is the same text that the vector store indexed, but we prepend
-    #     the category and system_prompt so you can do a quick filter later.
-    # ------------------------------------------------------------------
-    CORPUS = [
-        f"{d.metadata.get('category','general')} | "
-        f"{d.metadata.get('system_prompt','')} "
-        f"{d.page_content}"
-        for d in docs
-    ]
-    # Pre‑compute the embeddings once – useful if you ever want a pure‑numpy
-    # cosine‑similarity lookup (the `retrieve_context` helper does this).
-    CORPUS_EMB = torch.tensor(
-        np.array([embedding_function.embed_query(text) for text in CORPUS])
-    )
-    logger.info("Corpus embeddings prepared.")
+        # ------------------------------------------------------------------
+        # 3️⃣  sanity‑check output (you can delete these prints in prod)
+        # ------------------------------------------------------------------
+        if docs:
+            logger.info(f"Successfully processed {len(docs)} documents into string content.")
+            print("\n--- Sample document after processing --------------------------------")
 
-except Exception as e:
-    # ------------------------------------------------------------------
-    #  🚨  Anything that blows up in the block above ends up here.
-    # ------------------------------------------------------------------
-    logger.exception(f"Dataset loading failed: {e}")
-    docs = []
-    vectorstore = None
-    CORPUS = []
-    CORPUS_EMB = torch.tensor([])
+            print(f"page_content (first 120 chars): {docs[0].page_content[:120]}...")
+            print(f"metadata (first doc): {docs[0].metadata}")
+        else:
+            logger.error("No valid documents processed – check the JSON structure or jq_schema.")
+            raise RuntimeError("Dataset processing yielded zero documents")
 
-# Load positive dataset
+        # ------------------------------------------------------------------
+        # 4️⃣  Build the FAISS vector store (embeds the short strings)
+        # ------------------------------------------------------------------
+        logger.info(f"🔨 Creating FAISS embeddings for {len(docs)} documents (this may take a minute)...")
+        vectorstore = FAISS.from_documents(docs, embedding_function)
+        RETRIEVER_MAIN = vectorstore.as_retriever(search_kwargs={"k": 5}) if vectorstore else None
+        vectorstore.save_local("faiss_zenark_index")
+        
+        # ------------------------------------------------------------------
+        # 5️⃣  Save index metadata (file hash, document count, timestamp)
+        # ------------------------------------------------------------------
+        current_hash = compute_file_hash(DATA_PATH)
+        index_metadata = {
+            "file_hash": current_hash,
+            "document_count": len(docs),
+            "last_updated": datetime.datetime.now().isoformat(),
+            "data_path": DATA_PATH,
+            "version": 1
+        }
+        save_index_metadata(index_metadata, "zenark")
+        logger.info(f"✅ FAISS index built, saved, and metadata recorded. Hash: {current_hash[:16]}...")
+
+        # ------------------------------------------------------------------
+        # 6️⃣  (Optional) Build a *corpus* for cheap cosine‑similarity fallback.
+        #     This is the same text that the vector store indexed, but we prepend
+        #     the category and system_prompt so you can do a quick filter later.
+        # ------------------------------------------------------------------
+        CORPUS = [
+            f"{d.metadata.get('category','general')} | "
+            f"{d.metadata.get('system_prompt','')} "
+            f"{d.page_content}"
+            for d in docs
+        ]
+        # Pre‑compute the embeddings once – useful if you ever want a pure‑numpy
+        # cosine‑similarity lookup (the `retrieve_context` helper does this).
+        CORPUS_EMB = torch.tensor(
+            np.array([embedding_function.embed_query(text) for text in CORPUS])
+        )
+        logger.info("Corpus embeddings prepared.")
+
+    except Exception as e:
+        # ------------------------------------------------------------------
+        #  🚨  Anything that blows up in the block above ends up here.
+        # ------------------------------------------------------------------
+        logger.exception(f"Dataset loading/embedding failed: {e}")
+        docs = []
+        vectorstore = None
+        CORPUS = []
+        CORPUS_EMB = torch.tensor([])
+
+# Load positive dataset with smart index checking
 POSITIVE_DATA_PATH = "positive_conversation.json"
 positive_vectorstore = None
-try:
-    positive_loader = JSONLoader(
-        file_path=POSITIVE_DATA_PATH,
-        jq_schema=".dataset[]",
-        metadata_func=metadata_func,
-        text_content=False,
-    )
-    raw_positive_docs: List[Document] = positive_loader.load()
-    logger.info(f"Loaded {len(raw_positive_docs)} positive empathy documents.")
+RETRIEVER_POSITIVE = None
 
-    positive_docs: List[Document] = []
-    for doc in raw_positive_docs:
-        try:
-            record = {
-                "patient_context": doc.metadata.get("patient_context", ""),
-                "psychiatrist_response": doc.metadata.get("psychiatrist_response", ""),
-                "empathic_question": doc.metadata.get("empathic_question", ""),
-                "empathic_response": doc.metadata.get("empathic_response", ""),
-                "next_question":     doc.metadata.get("next_question",      ""),
+if not index_needs_update(POSITIVE_DATA_PATH, index_type="positive"):
+    # ✅ Positive index exists and is up-to-date → Load from disk (FAST!)
+    logger.info("✅ Loading positive FAISS index from disk (no re-embedding needed)...")
+    try:
+        positive_vectorstore = FAISS.load_local("faiss_positive_index", embedding_function)
+        RETRIEVER_POSITIVE = positive_vectorstore.as_retriever(search_kwargs={"k": 5})
+        
+        # Load metadata for document count verification
+        stored_metadata = load_or_create_index_metadata("positive")
+        doc_count = stored_metadata.get("document_count", 0)
+        logger.info(f"✅ Positive FAISS index loaded successfully with {doc_count} documents.")
+        
+    except Exception as e:
+        logger.error(f"Failed to load positive FAISS index from disk: {e}. Will rebuild...")
+        positive_vectorstore = None
+
+if positive_vectorstore is None:
+    # ❌ Positive index doesn't exist or is outdated → Rebuild from JSON
+    logger.info("🔄 Positive FAISS index outdated or missing. Rebuilding from JSON...")
+    
+    try:
+        positive_loader = JSONLoader(
+            file_path=POSITIVE_DATA_PATH,
+            jq_schema=".dataset[]",
+            metadata_func=metadata_func,
+            text_content=False,
+        )
+        raw_positive_docs: List[Document] = positive_loader.load()
+        logger.info(f"Loaded {len(raw_positive_docs)} positive empathy documents from JSON.")
+
+        positive_docs: List[Document] = []
+        for doc in raw_positive_docs:
+            try:
+                record = {
+                    "patient_context": doc.metadata.get("patient_context", ""),
+                    "psychiatrist_response": doc.metadata.get("psychiatrist_response", ""),
+                    "empathic_question": doc.metadata.get("empathic_question", ""),
+                    "empathic_response": doc.metadata.get("empathic_response", ""),
+                    "next_question":     doc.metadata.get("next_question",      ""),
+                }
+                doc.page_content = embedding_content(record)
+                positive_docs.append(doc)
+            except Exception as inner_e:
+                logger.warning(
+                    f"Failed to process positive doc {doc.metadata.get('id','unknown')}: {inner_e}"
+                )
+                continue
+
+        if positive_docs:
+            logger.info(f"Successfully processed {len(positive_docs)} positive documents into string content.")
+            logger.info(f"🔨 Creating FAISS embeddings for {len(positive_docs)} positive documents...")
+            positive_vectorstore = FAISS.from_documents(positive_docs, embedding_function)
+            RETRIEVER_POSITIVE = positive_vectorstore.as_retriever(search_kwargs={"k": 5}) if positive_vectorstore else None
+            positive_vectorstore.save_local("faiss_positive_index")
+            
+            # Save positive index metadata
+            current_hash = compute_file_hash(POSITIVE_DATA_PATH)
+            positive_metadata = {
+                "file_hash": current_hash,
+                "document_count": len(positive_docs),
+                "last_updated": datetime.datetime.now().isoformat(),
+                "data_path": POSITIVE_DATA_PATH,
+                "version": 1
             }
-            doc.page_content = embedding_content(record)
-            positive_docs.append(doc)
-        except Exception as inner_e:
-            logger.warning(
-                f"Failed to process positive doc {doc.metadata.get('id','unknown')}: {inner_e}"
-            )
-            continue
+            save_index_metadata(positive_metadata, "positive")
+            logger.info(f"✅ Positive FAISS index built, saved, and metadata recorded. Hash: {current_hash[:16]}...")
+        else:
+            logger.error("No valid positive documents processed.")
+    except Exception as e:
+        logger.exception(f"Positive dataset loading/embedding failed: {e}")
+        positive_vectorstore = None
 
-    if positive_docs:
-        logger.info(f"Successfully processed {len(positive_docs)} positive documents into string content.")
-        positive_vectorstore = FAISS.from_documents(positive_docs, embedding_function)
-        RETRIEVER_POSITIVE = positive_vectorstore.as_retriever(search_kwargs={"k": 5}) if positive_vectorstore else None
-        positive_vectorstore.save_local("faiss_positive_index")
-        logger.info("Positive FAISS index built and saved.")
-    else:
-        logger.error("No valid positive documents processed.")
-except Exception as e:
-    logger.exception(f"Positive dataset loading failed: {e}")
-    positive_vectorstore = None
+# If RETRIEVER_POSITIVE not set, ensure it's None
+if positive_vectorstore and RETRIEVER_POSITIVE is None:
+    RETRIEVER_POSITIVE = positive_vectorstore.as_retriever(search_kwargs={"k": 5})
 
 # ----------------------------------------------------------------------
 # At this point you have:
