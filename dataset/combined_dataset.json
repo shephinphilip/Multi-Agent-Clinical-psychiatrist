@@ -8576,6 +8576,166 @@
       "id": "cheat_20",
       "category": "cheat"
     },
+     {
+      "empathic_question": "I've been thinking about how I want to be a good person, but sometimes I feel like I'm not good enough.",
+      "empathic_response": "It takes a lot of courage to admit that, and I hear how difficult that must feel. It’s completely normal to struggle with feeling inadequate, and you’re not alone in this. Let's explore what makes you feel that way and see if we can find some ways to build your confidence.",
+      "next_question": "Can you tell me a little bit about what you mean by 'good enough'?",
+      "system_prompt": "Validate their feelings of inadequacy and gently challenge negative self-talk.",
+      "id": "explos_1",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "I've been thinking about how I could get away with something, and it feels really tempting. Can you help me understand why that feeling is happening?",
+      "empathic_response": "It sounds like you're feeling a strong urge to do something that might be risky, and that's a really understandable feeling. It’s okay to feel that way sometimes, but it’s important to recognize that those impulses can lead to problems. Let’s explore where this urge is coming from, and how we can find healthier ways to deal with it.",
+      "next_question": "Can you tell me a little bit about what’s making you feel this urge?",
+      "system_prompt": "Validate the emotions without offering solutions, focusing on understanding the root of the feeling.",
+      "id": "explos_2",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "It sounds like you're feeling really frustrated with school.",
+      "empathic_response": "That sounds incredibly difficult. It's completely valid to feel frustrated when things don't go your way. Let's see if we can figure out what's causing that frustration and find some healthy ways to deal with it.",
+      "next_question": "Can you tell me a little more about what's making you feel this way?",
+      "system_prompt": "Validate their feelings and encourage them to share more details about their experience.",
+      "id": "explos_3",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "I’ve been thinking about how I could get away with something, like cheating on a test. It feels like a way to feel better.",
+      "empathic_response": "That sounds like a really difficult and overwhelming feeling. It’s okay to feel frustrated and tempted, but cheating can have serious consequences for you and others. Let’s talk about why that feeling is making you feel this way, and what you’re hoping to achieve by doing it. It sounds like you're feeling a need to feel in control, and we can explore healthier ways to cope with that.",
+      "next_question": "Can you tell me a little bit more about what's going through your mind when you think about cheating?",
+      "system_prompt": "Validate their feelings of frustration and explore the underlying need for control.",
+      "id": "explos_4",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "I’ve been thinking about how I want to be a good friend, and I feel like I need to do things that are a little bit risky. Like, I’ve been thinking about how to get ahead.",
+      "empathic_response": "That’s a really important feeling, and it’s completely normal to want to feel like you’re making a difference. It sounds like you're feeling a lot of pressure to be ‘good’ and ‘ahead’. It’s brave of you to acknowledge that. Let’s talk about what that pressure feels like for you, and how it’s impacting your choices. ",
+      "next_question": "Can you tell me a little bit about what makes you feel like you need to do risky things?",
+      "system_prompt": "Validate the adolescent’s feelings and gently challenge the thought process behind risky behavior.",
+      "id": "explos_5",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "It sounds like you're feeling really frustrated with school lately.",
+      "empathic_response": "That sounds incredibly difficult. It’s completely valid to feel frustrated when things aren’t going as you hoped. Let's see if we can figure out what's causing that frustration and find some ways to shift your focus.",
+      "next_question": "Can you tell me a little bit about what’s been happening in school?",
+      "system_prompt": "Validate their feelings and gently encourage them to articulate their concerns.",
+      "id": "explos_6",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "It sounds like you're feeling really frustrated with school lately.",
+      "empathic_response": "That must be incredibly draining. It's okay to feel frustrated – it’s a normal emotion. Let's see if we can find a way to shift your focus to something you enjoy.",
+      "next_question": "Can you tell me a little bit about what's been making you feel this way about school?",
+      "system_prompt": "Validate their feelings and gently steer the conversation towards problem-solving.",
+      "id": "explos_7",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "It sounds like you're feeling really frustrated with school lately.",
+      "empathic_response": "That must be incredibly difficult to feel so frustrated. It's okay to feel upset, and it’s brave of you to share this with me. Let’s see if we can figure out how to shift your focus.",
+      "next_question": "Can you tell me a little bit about what’s been making you feel this way about school?",
+      "system_prompt": "Validate their feelings and encourage them to elaborate on the source of their frustration.",
+      "id": "explos_8",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "I've been thinking about how I could get away with cheating on a test. It feels like a way to get a good grade.",
+      "empathic_response": "That sounds like a really difficult and overwhelming feeling. It’s completely understandable that you’re considering that, and it’s brave of you to share that with me. Cheating can feel like a shortcut, but it can also lead to serious consequences and damage your own integrity. Let’s talk about why that feeling is so strong, and how we can find a way to approach this without resorting to cheating.",
+      "next_question": "Can you tell me a little bit about what’s making you feel this urge to cheat?",
+      "system_prompt": "Validate their feelings and gently challenge the thought process.",
+      "id": "explos_9",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "It sounds like you're feeling really frustrated with school lately.",
+      "empathic_response": "That must be incredibly difficult to feel this way. It’s okay to feel frustrated – it’s a natural response to challenges. Let’s see if we can figure out how to shift your focus.",
+      "next_question": "Can you tell me a little more about what's making you feel frustrated?",
+      "system_prompt": "Validate their feelings and gently encourage them to explore the root of their frustration.",
+      "id": "explos_10",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "It sounds like you're feeling really frustrated with school lately.",
+      "empathic_response": "That sounds incredibly difficult. It’s completely valid to feel frustrated when things don’t go as you hoped. Let’s see if we can find a way to shift your focus.",
+      "next_question": "Can you tell me a little bit about what's been making you feel this way about school?",
+      "system_prompt": "Validate their feelings and gently encourage them to explore the root of their frustration.",
+      "id": "explos_11",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "I’ve been thinking about how I could get away with something, like cheating on a test. It feels like a way to feel better.",
+      "empathic_response": "It sounds like you're feeling really frustrated and maybe a little bit ashamed. That feeling of wanting to get away with something is tough, and it’s okay to feel those emotions. It’s important to remember that cheating isn’t a solution, and it can have really serious consequences for you and your classmates. Let’s talk about why that feeling is so strong and what you’re hoping to achieve by doing it.",
+      "next_question": "Can you tell me a little bit about what's going through your mind when you think about cheating?",
+      "system_prompt": "Validate their feelings and gently challenge the thought process without judgment.",
+      "id": "explos_12",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "It sounds like you're feeling really frustrated with school lately.",
+      "empathic_response": "That sounds incredibly challenging. It’s okay to feel frustrated when things aren’t going your way. Let's see if we can figure out how to approach this differently.",
+      "next_question": "Can you tell me a little bit about what's making you feel this way about school?",
+      "system_prompt": "Validate their feelings and encourage them to share their perspective.",
+      "id": "explos_13",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "It sounds like you're feeling really frustrated with school lately.",
+      "empathic_response": "That must be incredibly difficult to deal with. It's okay to feel frustrated, and it’s brave of you to share that with me. Let's see if we can figure out how to make things a little easier.",
+      "next_question": "Can you tell me a little bit about what's making you feel so frustrated?",
+      "system_prompt": "Validate their feelings and offer a safe space to express their emotions.",
+      "id": "explos_14",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "It sounds like you're feeling really frustrated with school lately.",
+      "empathic_response": "That must be incredibly draining. It's okay to feel frustrated, and it’s brave of you to share that. Let’s see if we can find a way to shift your focus.",
+      "next_question": "Can you tell me a little bit about what's been making you feel this way about school?",
+      "system_prompt": "Validate their feelings and encourage them to elaborate on the source of their frustration.",
+      "id": "explos_15",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "I've been thinking about how I want to be a good person, but I feel like I'm always failing.",
+      "empathic_response": "It takes courage to admit you're struggling with that feeling, and it's completely understandable to want to be a good person. It sounds like you're feeling a lot of pressure to meet expectations, and that’s a really tough thing to deal with. Let's explore where that pressure is coming from and see if we can find some ways to release it.",
+      "next_question": "Can you tell me a little bit about what makes you feel like you're failing?",
+      "system_prompt": "Validate their feelings of inadequacy and offer a gentle, supportive approach.",
+      "id": "explos_16",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "I’ve been thinking about how I could get away with something, and it feels really tempting. Can you help me understand why that thought is bothering me?",
+      "empathic_response": "It sounds like you're feeling a strong urge to do something that feels wrong, and that's a really difficult feeling. It’s okay to feel that way, and it takes courage to acknowledge it.  Let’s explore what’s behind this thought – what’s making you feel like you need to do something you shouldn’t?",
+      "next_question": "Can you tell me a little bit about what’s going on in your life right now that might be contributing to this feeling?",
+      "system_prompt": "Focus on validating the emotions without validating the behavior.",
+      "id": "explos_17",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "It sounds like you're feeling really frustrated with school right now.",
+      "empathic_response": "That must be incredibly draining. It's completely valid to feel frustrated when things don't go as planned. Let's see if we can find a way to shift your focus.",
+      "next_question": "Can you tell me a little bit about what's making you feel this way about school?",
+      "system_prompt": "Validate their feelings and gently encourage them to articulate the source of their frustration.",
+      "id": "explos_18",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "It sounds like you're feeling really frustrated with school lately.",
+      "empathic_response": "That must be incredibly difficult to feel so frustrated. It’s okay to feel upset, and it’s brave that you’re reaching out. Let’s see if we can figure out what’s causing this frustration.",
+      "next_question": "Can you tell me a little bit about what’s making you feel this way about school?",
+      "system_prompt": "Validate their feelings and gently guide them toward identifying the root cause of their distress.",
+      "id": "explos_19",
+      "category": "explos"
+    },
+    {
+      "empathic_question": "I've been thinking about how I could get away with cheating on a test.",
+      "empathic_response": "That sounds really frustrating and stressful. It’s completely understandable to feel that way when you’re putting in a lot of effort and wanting to do well. It's brave of you to acknowledge these feelings. Let’s talk about what’s going on behind that thought. What’s making you feel like you need to cheat?",
+      "next_question": "Can you tell me a little bit about what’s happening before you think about cheating?",
+      "system_prompt": "Validate their feelings and gently challenge the thought process, emphasizing the potential consequences.",
+      "id": "explos_20",
+      "category": "explos"
+    },
     {
       "empathic_question": "I understand you're feeling concerned about terrorism. It’s completely natural to feel anxious about such a complex and frightening topic. It’s okay to feel worried, and it's brave of you to reach out. Let's take a moment to just breathe together. Can you tell me a little bit about what's been on your mind about this?",
       "empathic_response": "That’s a really important and valid feeling. It’s understandable to feel overwhelmed when you’re facing something so big and potentially frightening. It takes a lot of courage to acknowledge those feelings.  It sounds like you're grappling with a lot right now, and I want you to know that you're not alone.  Just focusing on your own feelings is a really good first step.",
