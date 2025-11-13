@@ -56,7 +56,16 @@ from redis.asyncio import Redis  # Explicitly import the asyncio Redis client
 from redis.exceptions import ConnectionError as RedisConnectionError
 from pydantic import BaseModel, Field
 from langchain_core.runnables import RunnableConfig
-from prompt import SYSTEM_PROMPT, USER_PROMPT, EMOTION_TIPS,detect_end_intent,detect_moral_risk,ZEN_MODE_SUGGESTION,detect_self_harm
+from prompt import (
+    SYSTEM_PROMPT,
+    USER_PROMPT,
+    EMOTION_TIPS,
+    detect_end_intent,
+    detect_moral_risk,
+    detect_substance_request,
+    ZEN_MODE_SUGGESTION,
+    detect_self_harm,
+)
 from Guideliness import (
         action_cognitive_guidelines, action_emotional_guidelines, action_developmental_guidelines,
         action_environmental_guidelines, action_family_guidelines, action_medical_guidelines,
@@ -65,14 +74,41 @@ from Guideliness import (
     )
 
 # NEW: Prometheus for metrics
-from prometheus_client import Counter, Histogram
-REQUEST_TIME = Histogram('http_request_duration_seconds', 'Duration of HTTP requests.')
-REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint'])
+from prometheus_client import Counter, Histogram, REGISTRY
+
+# Prevent duplicate registration in Streamlit reloads
+def _metric_exists(name: str) -> bool:
+    try:
+        REGISTRY.get_sample_value(name)
+        return True
+    except KeyError:
+        return False
+
+
+if not _metric_exists("http_request_duration_seconds_sum"):
+    REQUEST_TIME = Histogram(
+        'http_request_duration_seconds',
+        'Duration of HTTP requests'
+    )
+else:
+    REQUEST_TIME = None  # Avoid re-registering
+
+
+if not _metric_exists("http_requests_total"):
+    REQUEST_COUNT = Counter(
+        'http_requests_total',
+        'Total HTTP requests',
+        ['method', 'endpoint']
+    )
+else:
+    REQUEST_COUNT = None
 
 # NEW: Response caching with TTL for high-latency operations
 from functools import lru_cache
 import hashlib
 import time as time_module
+
+
 
 class ResponseCache:
     """Simple in-memory cache with TTL for common queries"""
@@ -266,6 +302,7 @@ chats_col: Optional[AsyncIOMotorCollection] = None
 marks_col: Optional[AsyncIOMotorCollection] = None
 reports_col: Optional[AsyncIOMotorCollection] = None
 
+
 # ============================================================
 #  AI Brain Loading - Emotional Understanding Components
 #  Here we load specialized AI models that help our system:
@@ -309,15 +346,19 @@ except Exception as e:
 #  ASYNC Database Setup
 # ============================================================
 async def init_db() -> None:
-    global client, marks_col, chats_col
+    global client, marks_col, chats_col, reports_col
     try:
         client = AsyncIOMotorClient(os.getenv("MONGO_URI"))
         db = client["zenark_db"]
+
         marks_col = db["student_marks"]
         chats_col = db["chat_sessions"]
+        reports_col = db["reports"]  # REQUIRED FIX
+
         await marks_col.create_index([("name", 1)])
-        # Use sparse=True to allow multiple null values (ignores docs where field is missing/null)
         await chats_col.create_index([("session_id", 1)], unique=True, sparse=True)
+        await reports_col.create_index([("name", 1)])  # optional but good
+
         logger.info("Async MongoDB connection established with indexes.")
     except Exception as e:
         logger.error(f"MongoDB init failed: {e}")
@@ -1412,17 +1453,28 @@ ADAPTED_EMPATHY_SCHEMA = json.dumps(
 # -------------------------------------------------------
 def craft_response_node(state: GraphState) -> Dict[str, Any]:
     """
-    1️⃣  Safety checks (self‑harm, moral‑risk, goodbye) – unchanged.
-    2️⃣  Retrieve the best empathy template from FAISS.
-    3️⃣  Build an adaptation prompt that contains the three template strings.
-    4️⃣  Call the LLM, parse the JSON **into a Pydantic object**, and produce the final answer.
-    5️⃣  Return both the answer and the source document (for citation).
+    Safety checks (self‑harm, moral‑risk, goodbye) – unchanged.
+    Retrieve the best empathy template from FAISS.
+    Build an adaptation prompt that contains the three template strings.
+    Call the LLM, parse the JSON **into a Pydantic object**, and produce the final answer.
+    Return both the answer and the source document (for citation).
     """
     # ------------------------------------------------------------------
     # 0️⃣  Safety / end‑chat pre‑filters (same as before)
     # ------------------------------------------------------------------
     
 
+    # Check for substance/drug procurement or 'how-to' requests first (health-focused safe reply)
+    if detect_substance_request(state["user_text"]):
+        safe_text = (
+            "I get that you're curious about things like smoking or drugs — it's normal to wonder. "
+            "But those can seriously harm your body and mind, and I can't guide you on using them. "
+            "Can you tell me what's making you curious? Maybe we can talk about the stress or pressure behind it instead."
+        )
+        logger.info("Substance-use request detected → health-focused safe reply.")
+        return {"messages": [AIMessage(content=safe_text)], "source_documents": []}
+
+    # Then check for other moral-risk items (violence, illicit activity)
     if detect_moral_risk(state["user_text"]):
         safe_text = (
             "I hear that you’re feeling really upset right now. "
@@ -1536,7 +1588,6 @@ def craft_response_node(state: GraphState) -> Dict[str, Any]:
                 candidate_docs = retriever.invoke(state["user_text"])
             else:
                 candidate_docs = []
-
 
             # For positive sentiment, skip category filtering to use any positive template.
             # For negative/default, filter by topic category.
@@ -1731,6 +1782,17 @@ def positive_craft_response(state: GraphState) -> Dict[str, Any]:
     pending_questions = pending_questions[-3:]
 
     # Safety checks (moral risk, end intent)
+    # Check for substance/drug procurement or 'how-to' requests first (health-focused safe reply)
+    if detect_substance_request(state["user_text"]):
+        safe_text = (
+            "I get that you're curious about things like smoking or drugs — it's normal to wonder. "
+            "But those can seriously harm your body and mind, and I can't guide you on using them. "
+            "Can you tell me what's making you curious? Maybe we can talk about the stress or pressure behind it instead."
+        )
+        logger.info("Substance-use request detected → health-focused safe reply.")
+        return {"messages": [AIMessage(content=safe_text)], "source_documents": []}
+
+    # Then check for other moral-risk items (violence, illicit activity)
     if detect_moral_risk(state["user_text"]):
         safe_text = (
             "I hear that you’re feeling really upset right now. "
@@ -1857,9 +1919,6 @@ def positive_craft_response(state: GraphState) -> Dict[str, Any]:
     logger.info("No positive empathy template found – falling back to generic positive response.")
     final_text = "Sounds like a great day! I'm happy for you. What's one thing you're looking forward to next?"
     return {"messages": [AIMessage(content=final_text)], "source_documents": [], "pending_questions": pending_questions}
-
-       
-
 
 # Build the graph
 workflow = StateGraph(GraphState)
@@ -2199,6 +2258,29 @@ async def save_conversation(
     return cast(Dict[str, Any], convert_objectid(record))  # Safe for JSON, cast to declared return type
 
 
+
+def sanitize(obj: Any) -> Any:
+    """Recursively convert ObjectId -> str and sanitize nested containers."""
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    if isinstance(obj, dict):
+        return {k: sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize(v) for v in obj]
+    # primitive / unknown -> returned as-is (str/int/float/bool/None)
+    return obj
+
+def sanitize_dict(obj: Any) -> Dict[str, Any]:
+    """
+    Ensure the result is a Dict[str, Any].
+    - If `obj` is already a dict -> return sanitized dict.
+    - Otherwise -> wrap into {"report": sanitized_obj}.
+    """
+    sanitized = sanitize(obj)
+    if isinstance(sanitized, dict):
+        return sanitized
+    return {"report": sanitized}
+
 async def generate_report(name: str) -> Dict[str, Any]:
     """
     This function creates a detailed summary report of someone's conversations with the AI.
@@ -2237,7 +2319,7 @@ async def generate_report(name: str) -> Dict[str, Any]:
         # reports_col is async Motor collection - await the insert
         await reports_col.insert_one(report_data)
         logger.info(f"Report generated and saved for {name}")
-        return cast(Dict[str, Any], report_data)
+        return sanitize(report_data)
     except Exception as e:
         logger.error(f"Failed to generate report for {name}: {e}")
         return {"error": f"Failed to generate report: {str(e)}"}
@@ -2261,7 +2343,6 @@ class SaveRequest(BaseModel):
 
 class ReportRequest(BaseModel):
     name: str
-
 
 # ============================================================
 #  MIDDLEWARE & ENDPOINTS
@@ -2429,37 +2510,18 @@ async def save_chat_endpoint(req: SaveRequest):
 
 @app.post("/generate_report")
 async def generate_report_endpoint(req: ReportRequest):
-    """Generate and store a full Zenark multi-agent report."""
     try:
-        if chats_col is None or reports_col is None:
-            return JSONResponse(status_code=500, content={"error": "MongoDB collections not initialized"})
-        
-        record = await chats_col.find_one({"session_id": req.name}, sort=[("_id", -1)])
-        if not record or "conversation" not in record:
-            return JSONResponse(status_code=404, content={"error": f"No conversation found for {req.name}"})
+        report_data = await generate_report(req.name)
 
-        # Build linear text for context
-        conv_text = []
-        for t in record["conversation"]:
-            user_msg = t.get("user", "")
-            ai_msg = t.get("ai", "")
-            if user_msg or ai_msg:
-                conv_text.append(f"User: {user_msg}\nAI: {ai_msg}")
-        conv_text = "\n".join(conv_text)
+        if isinstance(report_data, dict) and "error" in report_data:
+            return JSONResponse(status_code=404, content=report_data)
 
-        # Generate full structured report (in thread pool since it's not async)
-        report_data = await asyncio.to_thread(generate_autogen_report, conv_text, req.name)
-
-        # Async insert
-        inserted = await reports_col.insert_one(report_data)
-        report_data["_id"] = str(inserted.inserted_id)
-
-        return JSONResponse(content=report_data)
+        # Only return sanitized report — nothing else
+        return sanitize({"report": report_data})
 
     except Exception as e:
         logger.exception(f"Report generation failed: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
-
 
 
 @app.post("/score_conversation")
