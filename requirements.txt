@@ -18,3 +18,4 @@ autogen
 jq
 fastapi-limiter
 fastapi-cache2
+prometheus-client
