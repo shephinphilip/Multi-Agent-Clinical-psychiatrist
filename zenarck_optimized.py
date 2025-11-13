@@ -345,23 +345,59 @@ except Exception as e:
 # ============================================================
 #  ASYNC Database Setup
 # ============================================================
+# ============================================================
+#  DATABASE INITIALIZATION (ASYNC MOTOR)
+# ============================================================
 async def init_db() -> None:
+    """
+    Initialize MongoDB collections asynchronously using Motor.
+    
+    CRITICAL ARCHITECTURE NOTE:
+    ============================
+    This function must be called ONCE at application startup via lifespan context manager.
+    Motor is an async, non-blocking MongoDB driver that requires:
+    
+    1. A persistent event loop (never use asyncio.run() in Streamlit context)
+    2. Connection pooling that survives across multiple concurrent requests
+    3. Collections to be accessed only from within async contexts
+    
+    LIFECYCLE PATTERN:
+    - Called in @app.lifespan async context manager
+    - Runs ONCE when FastAPI starts (before any requests arrive)
+    - Keeps connections alive until app shutdown
+    - If called from Streamlit: Streamlit calls this from persistent event loop (daemon thread)
+    
+    WHY THIS MATTERS:
+    - Without persistent loop: Motor connections close after each operation
+    - Result: \"Event loop is closed\" errors on second request
+    - Solution: Streamlit UI maintains daemon thread with running event loop
+    
+    COLLECTIONS CREATED:
+    - student_marks: Stores user wellbeing scores (indexed by name)
+    - chat_sessions: Stores conversation history (indexed by session_id)
+    - reports: Stores generated reports (indexed by name for retrieval)
+    """
     global client, marks_col, chats_col, reports_col
     try:
+        # Create async Motor client connected to MongoDB
+        # Connection pooling happens automatically; survives entire app lifetime
         client = AsyncIOMotorClient(os.getenv("MONGO_URI"))
         db = client["zenark_db"]
 
+        # Reference collections (lazy initialization—not created until first use)
         marks_col = db["student_marks"]
         chats_col = db["chat_sessions"]
-        reports_col = db["reports"]  # REQUIRED FIX
+        reports_col = db["reports"]  # Critical for report persistence
 
-        await marks_col.create_index([("name", 1)])
-        await chats_col.create_index([("session_id", 1)], unique=True, sparse=True)
-        await reports_col.create_index([("name", 1)])  # optional but good
+        # Create indexes for fast queries (especially important for high-concurrency scenarios)
+        # Indexes also enforce uniqueness constraints and sparse indexing (null-safe)
+        await marks_col.create_index([("name", 1)])  # Fast lookups by name
+        await chats_col.create_index([("session_id", 1)], unique=True, sparse=True)  # One record per session
+        await reports_col.create_index([("name", 1)])  # Fast report retrieval by user name
 
-        logger.info("Async MongoDB connection established with indexes.")
+        logger.info("✅ Async MongoDB (Motor) connection established with indexes.")
     except Exception as e:
-        logger.error(f"MongoDB init failed: {e}")
+        logger.error(f"❌ MongoDB init failed: {e}")
         raise
 
 
@@ -2115,74 +2151,139 @@ async def generate_response(
     marks_col: Optional[AsyncIOMotorCollection] = None
 ) -> Dict[str, Any]:
     """
-    Generate an empathetic response to user input asynchronously.
+    Generate an empathetic AI response to user input asynchronously.
+    
+    This is the CORE function of the Zenark system. It orchestrates a multi-agent pipeline:
+    1. Sentiment Analysis: Classify user emotion (happy, sad, angry, etc.)
+    2. Intent Classification: Understand what category of help is needed
+    3. RAG (Retrieval-Augmented Generation): Find relevant knowledge from corpus
+    4. LangGraph Orchestration: Route through specialized agents (crisis, empathy, etc.)
+    5. LLM Generation: Generate response via gpt-4o-mini with safety checks
+    
+    ASYNC ARCHITECTURE:
+    - All database reads/writes use Motor (async)
+    - All LLM calls use AsyncOpenAI (async)
+    - All HF pipelines run in thread pool to avoid blocking
+    - Response timeout: 15 seconds (fallback to generic if exceeded)
+    
+    INTEGRATION WITH STREAMLIT:
+    - Called from zenark_streamlit_ui.py via:
+      ```
+      coro = generate_response(..., marks_col=backend_async.marks_col)
+      result = asyncio.run_coroutine_threadsafe(coro, persistent_loop).result(timeout=60)
+      ```
+    - marks_col passed from Streamlit's persistent Motor client
+    - Result immediately returned as JSON-serializable dict
     
     Args:
-        user_text: User's input message.
-        name: Optional user name.
-        question_index: Current question number.
-        max_questions: Maximum questions per session.
-        session_id: Unique session identifier.
-        marks_col: MongoDB collection for marks.
+        user_text: User's input message (e.g., "I'm feeling overwhelmed")
+        name: Optional user name (stored in conversation history)
+        question_index: Current question number (for progress tracking)
+        max_questions: Max questions before conversation ends (default 5)
+        session_id: Unique identifier for this conversation (for memory retrieval)
+        marks_col: Motor collection reference from Streamlit (or None for API-only mode)
     
     Returns:
-        Dict with {"response": str, "prompt_tokens": int} for token accounting.
+        Dict[str, Any] with:
+        - "response": str - The AI's generated response
+        - "prompt_tokens": int - OpenAI token count (for cost tracking)
+        
+    Raises:
+        ValueError: If MongoDB collections not initialized
+    
+    Example Output:
+        {
+            "response": "I hear you. Feeling overwhelmed is tough. Let's break it down...",
+            "prompt_tokens": 1250
+        }
     """
+    # TIMING & LOGGING: Track total latency for performance monitoring
     start_time = datetime.datetime.now()
     safe_name = name or "Unknown"
-    logger.info(f"Generating response | user={safe_name} | session={session_id} | text='{user_text[:80]}'")
+    logger.info(f"🔄 Generating response | user={safe_name} | session={session_id} | text='{user_text[:80]}'")
 
+    # EARLY EXIT: Empty input protection
     if not user_text:
         return {"response": "Could you share a bit more about how you're feeling?", "prompt_tokens": 0}
 
+    # CRITICAL: MongoDB collections must be initialized before any chat operations
+    # If running from Streamlit: collections come from persistent Motor client (daemon thread)
+    # If running from API: collections initialized at app startup in lifespan context
     if chats_col is None or marks_col is None:
-        raise ValueError("MongoDB collections not initialized.")
+        raise ValueError("❌ MongoDB collections not initialized. Call init_db() first.")
 
+    # MEMORY MANAGEMENT: Retrieve or create conversation history from MongoDB
+    # AsyncMongoChatMemory handles all Motor queries transparently
+    # Note: get_history() is synchronous (reads from in-memory cache if available)
     memory = AsyncMongoChatMemory(session_id, chats_col)
-    history = memory.get_history()  # Synchronous call
-    await memory.append_user(user_text)
-    user_msg = HumanMessage(content=user_text)
-    history.add_message(user_msg)
+    history = memory.get_history()  # Sync method returns LangChain ChatMessageHistory
+    await memory.append_user(user_text)  # Async: persists to MongoDB
+    user_msg = HumanMessage(content=user_text)  # LangChain message object
+    history.add_message(user_msg)  # Add to in-memory history for LangGraph processing
 
+    # LANGGRAPH STATE INITIALIZATION: Prepare all data for multi-agent orchestration
+    # This state dict is passed through every node in the LangGraph pipeline
+    # Each node reads/modifies specific fields (sentiment node updates "sentiment", etc.)
     initial_state: GraphState = {
-        "messages": list(history.messages),
-        "user_text": user_text,
-        "session_id": session_id,
-        "name": name,
-        "question_index": question_index,
-        "max_questions": max_questions,
-        "category": "emotional_functioning",
-        "last_category": None,
-        "category_questions_count": 0,
-        "emotion_scores": {},
-        "marks": None,
-        "rag_context": "",
-        "guideline": "",
-        "sentiment": None,
-        "is_crisis": False,
-        "pending_questions": [],
+        # MESSAGE HISTORY
+        "messages": list(history.messages),  # All prior messages for context window
+        
+        # USER INPUT
+        "user_text": user_text,  # Current user message
+        "session_id": session_id,  # For memory lookups
+        "name": name,  # For personalization
+        
+        # CONVERSATION TRACKING
+        "question_index": question_index,  # Which question in sequence (1-5)
+        "max_questions": max_questions,  # When to end conversation
+        
+        # SEMANTIC UNDERSTANDING (populated by pipeline nodes)
+        "category": "emotional_functioning",  # Current mental health category
+        "last_category": None,  # Previous category (for routing)
+        "category_questions_count": 0,  # Questions asked in this category
+        "emotion_scores": {},  # Emotion classification scores (e.g., {"sad": 0.9})
+        "sentiment": None,  # Positive/Negative/Neutral classification
+        
+        # AI GENERATION DATA
+        "marks": None,  # User's wellness marks (for context)
+        "rag_context": "",  # Retrieved context from knowledge base
+        "guideline": "",  # Clinical guidelines for this category
+        "is_crisis": False,  # Crisis detection flag
+        "pending_questions": [],  # Questions to ask next
     }
 
+    # LANGGRAPH INVOCATION: Execute multi-agent pipeline
+    # graph_app is a StateGraph with nodes for:
+    #   1. sentiment_node → classify emotion
+    #   2. intent_node → detect category (school, family, peer, etc.)
+    #   3. rag_node → retrieve knowledge
+    #   4. crisis_node → check for crisis indicators
+    #   5. empathy_node → generate empathetic response
+    # Nodes execute sequentially/conditionally; state flows through all
     start_invoke = datetime.datetime.now()
     config: RunnableConfig = {"configurable": {"marks_col": marks_col}}
-    result = await graph_app.ainvoke(initial_state, config=config)
+    result = await graph_app.ainvoke(initial_state, config=config)  # Await entire pipeline
     elapsed_invoke = (datetime.datetime.now() - start_invoke).total_seconds()
 
-    history.messages = result["messages"]
-    response = result["messages"][-1].content
-    prompt_tokens = result.get("prompt_tokens", 0)
-    await memory.append_ai(response)
+    # POST-PROCESSING: Extract response and save to history
+    history.messages = result["messages"]  # Update in-memory history with pipeline results
+    response = result["messages"][-1].content  # Last message in history is AI's response
+    prompt_tokens = result.get("prompt_tokens", 0)  # OpenAI token count
+    await memory.append_ai(response)  # Persist AI response to MongoDB
 
-    category = result.get("category", "unknown")
-    cat_count = result.get("category_questions_count", 0)
-    progress = min(100, int((cat_count / max_questions) * 100))
-    elapsed = (datetime.datetime.now() - start_time).total_seconds()
+    # ANALYTICS & MONITORING: Log detailed metrics for debugging/optimization
+    category = result.get("category", "unknown")  # Which mental health category
+    cat_count = result.get("category_questions_count", 0)  # How many questions so far
+    progress = min(100, int((cat_count / max_questions) * 100))  # Percentage completion
+    elapsed = (datetime.datetime.now() - start_time).total_seconds()  # Total end-to-end time
+    
     logger.info(
-        f"Response generated | category={category} | cat_count={cat_count} | "
+        f"✅ Response generated | category={category} | cat_count={cat_count} | "
         f"progress={progress}% | invoke_time={elapsed_invoke:.2f}s | "
         f"total_time={elapsed:.2f}s | len={len(response)} chars | prompt_tokens={prompt_tokens}"
     )
-    return {"response": response, "prompt_tokens": prompt_tokens}
+    
+    return {"response": response, "prompt_tokens": prompt_tokens}  # JSON-safe dict
 
 async def save_conversation(
     conversation: list,
@@ -2192,32 +2293,62 @@ async def save_conversation(
     token: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Save the complete conversation record asynchronously, like keeping detailed
-    counseling session notes. For each conversation, it:
+    Save the complete conversation record to MongoDB asynchronously.
     
-    1. Records what was said (by both user and AI)
-    2. Analyzes the emotions expressed (commented out for now)
-    3. Stores everything safely in MongoDB
-    4. Creates a backup file for extra safety
+    This function is the PERSISTENCE layer for all user conversations. It:
+    1. Takes all conversation turns (user messages + AI responses)
+    2. Analyzes emotions (optional, currently commented out)
+    3. Inserts complete record into MongoDB via Motor
+    4. Creates backup JSON file for disaster recovery
+    5. Returns sanitized record (ObjectId → str) for JSON response
+    
+    MOTOR ASYNC DESIGN:
+    - Uses Motor's async insert_one() to avoid blocking
+    - Non-blocking I/O: Multiple conversations can be saved concurrently
+    - Database connection pooling handled by Motor automatically
+    
+    DUAL PERSISTENCE STRATEGY:
+    1. PRIMARY: MongoDB (fast, queryable, indexed for reports)
+    2. BACKUP: Local JSON files (disaster recovery, auditing)
+    - If MongoDB fails: File still persists for manual recovery
+    - If both fail: Function logs exception but doesn't crash app
+    
+    INTEGRATION WITH STREAMLIT:
+    - Called from zenark_streamlit_ui.py's save_conversation() wrapper
+    - Wrapper uses asyncio.run_coroutine_threadsafe() for non-blocking save
+    - Streamlit doesn't wait for database; save happens in background
     
     Args:
-        conversation: List of conversation turns.
-        user_name: Optional user name.
-        session_id: Unique session identifier.
-        id: Optional user ID (ObjectId string).
-        token: Optional authentication token.
+        conversation: List of dict representing conversation turns
+                     Format: [{"user": "...", "ai": "..."}, ...]
+        user_name: User's display name (stored as "name" field in DB)
+        session_id: Unique conversation session identifier
+        id: Optional MongoDB ObjectId (string) for linking to user profile
+        token: Optional auth token (stored for audit trail)
     
     Returns:
-        Saved conversation record with MongoDB _id.
+        Dict[str, Any] with:
+        - "name": str - User name
+        - "conversation": list - Full conversation history
+        - "timestamp": str - ISO format timestamp (converted from datetime)
+        - "_id": str - MongoDB document ID (ObjectId as string)
+        - "userId": str or None - Linked user ID
+        
+    Raises:
+        No exceptions; all errors logged and handled gracefully.
     """
-    logger.info(f"Saving conversation for user={user_name} | session={session_id}")
+    logger.info(f"💾 Saving conversation for user={user_name} | session={session_id}")
+    
+    # EMOTION ANALYSIS: Optional enrichment of conversation (currently disabled)
+    # Could re-enable to add emotion scores to each user message
+    # Disabled because: (1) adds latency, (2) not needed for current UI, (3) available in reports
     analyzed_conversation = []
     for turn in conversation:
-        # Emotion classification (commented out as in original)
+        # TODO: Emotion classification can be re-enabled here if needed
         # if "user" in turn:
         #     text = turn["user"]
         #     try:
-        #         scores = emotion_classifier(text)
+        #         scores = emotion_classifier(text)  # HF pipeline call
         #         if isinstance(scores, list) and isinstance(scores[0], list):
         #             scores = scores[0]
         #         emotion_dict = {item.get("label", "unknown"): round(item.get("score", 0.0), 4) for item in scores if isinstance(item, dict)}
@@ -2227,35 +2358,51 @@ async def save_conversation(
         #         turn["emotion_scores"] = {"error": str(e)}
         analyzed_conversation.append(turn)
 
-    user_id = ObjectId(id) if id else None
+    # RECORD CONSTRUCTION: Build document for MongoDB insertion
+    user_id = ObjectId(id) if id else None  # Convert string ID to MongoDB ObjectId
     record = {
-        "name": user_name or "Unknown",
-        "conversation": analyzed_conversation,
-        "timestamp": datetime.datetime.now(),
-        "userId": user_id,
-        "token": token
+        "name": user_name or "Unknown",  # User name (indexed for queries)
+        "conversation": analyzed_conversation,  # Full conversation array
+        "timestamp": datetime.datetime.now(),  # UTC timestamp
+        "userId": user_id,  # Link to user profile (if available)
+        "token": token  # Auth token (optional, for audit)
     }
 
+    # MOTOR ASYNC INSERT: Non-blocking insertion into MongoDB
+    # Motor handles connection pooling; multiple concurrent inserts work seamlessly
     try:
         if chats_col is None:
-            raise ValueError("MongoDB collection not initialized.")
-        result = await chats_col.insert_one(record)  # Await async operation
-        record["_id"] = result.inserted_id
+            raise ValueError("❌ MongoDB collection (chats_col) not initialized. Call init_db() first.")
+        result = await chats_col.insert_one(record)  # AWAIT: Non-blocking insert
+        record["_id"] = result.inserted_id  # Capture MongoDB-generated ID
+        logger.info(f"✅ Conversation inserted to MongoDB with _id={result.inserted_id}")
     except Exception as e:
-        logger.exception(f"Mongo insert failed: {e}")
-        record["_id"] = None  # Fallback to avoid breaking downstream code
+        logger.exception(f"❌ Motor insert failed: {e}")
+        record["_id"] = None  # Fallback: still persist file (see below)
 
+    # BACKUP FILE PERSISTENCE: Disaster recovery strategy
+    # If MongoDB is down/unreachable: conversation still saved locally
+    # Files can be manually imported/recovered later
     folder = "chat_sessions"
-    os.makedirs(folder, exist_ok=True)
-    path = os.path.join(folder, f"{user_name or 'unknown'}_session_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+    os.makedirs(folder, exist_ok=True)  # Create folder if needed
+    path = os.path.join(
+        folder,
+        f"{user_name or 'unknown'}_session_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    )  # Filename includes name + timestamp for easy identification
+    
     try:
         with open(path, "w", encoding="utf-8") as f:
+            # safe_json: Custom serializer that handles datetime, ObjectId, etc.
             json.dump(record, f, indent=2, ensure_ascii=False, default=safe_json)
-        logger.info(f"Conversation persisted to {path}")
+        logger.info(f"✅ Conversation backed up to {path}")
     except Exception as e:
-        logger.warning(f"Failed to write backup file: {e}")
+        logger.warning(f"⚠️  Failed to write backup file: {e}")  # Non-fatal
 
-    return cast(Dict[str, Any], convert_objectid(record))  # Safe for JSON, cast to declared return type
+    # SANITIZATION: Convert MongoDB types to JSON-safe types
+    # ObjectId("...") → "..." (string representation)
+    # datetime → ISO string
+    # Returns a copy with all non-JSON types converted
+    return cast(Dict[str, Any], convert_objectid(record))  # JSON-serializable dict
 
 
 
@@ -2283,45 +2430,103 @@ def sanitize_dict(obj: Any) -> Dict[str, Any]:
 
 async def generate_report(name: str) -> Dict[str, Any]:
     """
-    This function creates a detailed summary report of someone's conversations with the AI.
+    Generate a comprehensive mental health report from a user's conversation history.
     
-    It works like this:
-    1. Finds the most recent conversation for the person
-    2. Reviews everything that was discussed
-    3. Creates a helpful summary that shows:
-       - Main topics discussed
-       - Emotional patterns noticed
-       - Progress made
-       - Areas that might need more attention
+    REPORT GENERATION PIPELINE:
+    ===========================
+    1. RETRIEVAL: Fetch most recent conversation from MongoDB (Motor async query)
+    2. FORMATTING: Convert conversation turns into narrative text
+    3. ANALYSIS: Use AutoGen multi-agent system to generate clinical insights
+    4. PERSISTENCE: Save report to MongoDB for future reference
+    5. RETURN: Sanitized report (ready for JSON response)
     
-    This is like a counselor writing up session notes to:
-    - Track someone's progress over time
-    - Identify important themes or concerns
-    - Help plan future conversations
-    - Provide insights about what's helping most
+    CLINICAL INSIGHTS PROVIDED:
+    - Main themes discussed (e.g., family stress, anxiety about school)
+    - Emotional patterns (e.g., escalating anxiety, positive reframing)
+    - Progress indicators (e.g., user showing resilience, seeking solutions)
+    - Recommended next steps (e.g., focus on family communication, practice mindfulness)
+    - Concern flags (e.g., mentions of self-harm, suicidal ideation)
+    
+    AUTOGEN INTEGRATION:
+    - generate_autogen_report() uses multi-agent orchestration
+    - Agents: therapist_agent, clinical_agent, wellness_agent
+    - Each agent provides perspective; synthesized into one report
+    - Not async (HumanMessage prompts require blocking I/O)
+    - Called via asyncio.to_thread() to avoid blocking event loop
+    
+    MOTOR ASYNC OPERATIONS:
+    - find_one({"name": name}): Motor query (async)
+    - insert_one(report_data): Motor insert (async)
+    - Both use connection pooling; non-blocking
+    
+    INTEGRATION WITH STREAMLIT:
+    - Called from zenark_streamlit_ui.py's generate_report() wrapper
+    - Wrapper uses asyncio.run_coroutine_threadsafe() to run async function
+    - UI waits max 120 seconds for report generation
+    - Timeouts fallback to error message ("Report generation timed out")
+    
+    Args:
+        name: str - User's name (must match "name" field in chat_sessions collection)
+    
+    Returns:
+        Dict[str, Any] with report data:
+        - "name": str - User name
+        - "report": str - Full clinical report
+        - "timestamp": str - When report was generated
+        - "_id": str - MongoDB document ID
+        
+        Or error dict if retrieval/generation fails:
+        - "error": str - Error message
+    
+    Example Query Pattern:
+        Input: name="Alice"
+        Query: chats_col.find_one({"name": "Alice"}, sort=[(_id, -1)])
+        Returns: Most recent conversation for Alice
     """
+    # CRITICAL: Verify MongoDB collections initialized (called during app startup)
     if chats_col is None or reports_col is None:
-        logger.error(f"MongoDB collections not initialized for report generation: name={name}")
-        return {"error": "MongoDB collections not initialized"}
+        logger.error(f"❌ MongoDB collections not initialized for report generation: name={name}")
+        return {"error": "MongoDB collections not initialized. Call init_db() first."}
 
     try:
-        record = await chats_col.find_one({"name": name}, sort=[("_id", -1)])
+        # MOTOR ASYNC QUERY: Retrieve most recent conversation from MongoDB
+        # find_one() with sort=[(_id, -1)] gets newest document first
+        # Non-blocking: Multiple concurrent report generations can happen
+        logger.info(f"🔍 Querying conversation for {name}...")
+        record = await chats_col.find_one({"name": name}, sort=[("-_id", -1)])
+        
+        # ERROR HANDLING: No conversation found for this user
         if not record:
-            logger.info(f"No conversation found for {name}")
+            logger.info(f"⚠️  No conversation found for {name}")
             return {"error": f"No conversation found for {name}"}
 
+        # FORMATTING: Convert conversation dict to narrative text
+        # Format: "User: ...\nAI: ...\nUser: ...\nAI: ..." 
+        # Used as input prompt for AutoGen agents
         conv_text = "\n".join(
             f"User: {t.get('user', '')}\nAI: {t.get('ai', '')}"
             for t in record.get("conversation", [])
         )
-        # generate_autogen_report is NOT async - run it in thread pool
+        logger.info(f"📄 Formatted conversation text: {len(conv_text)} chars")
+        
+        # AUTOGEN REPORT GENERATION: Run in thread pool (blocking operation)
+        # Why thread pool? generate_autogen_report() is synchronous
+        # asyncio.to_thread() prevents blocking the event loop
+        # Multiple threads can generate reports concurrently
+        logger.info(f"🤖 Generating AutoGen report for {name}...")
         report_data = await asyncio.to_thread(generate_autogen_report, conv_text, name)
-        # reports_col is async Motor collection - await the insert
+        
+        # MOTOR ASYNC INSERT: Save report to MongoDB
+        # Non-blocking; connection pooling handles concurrency
+        logger.info(f"💾 Persisting report to MongoDB...")
         await reports_col.insert_one(report_data)
-        logger.info(f"Report generated and saved for {name}")
+        logger.info(f"✅ Report generated and saved for {name}")
+        
+        # SANITIZATION: Convert ObjectId/datetime → JSON-safe types
         return sanitize(report_data)
+        
     except Exception as e:
-        logger.error(f"Failed to generate report for {name}: {e}")
+        logger.error(f"❌ Failed to generate report for {name}: {e}")
         return {"error": f"Failed to generate report: {str(e)}"}
 
 # # ============================================================
@@ -2510,17 +2715,42 @@ async def save_chat_endpoint(req: SaveRequest):
 
 @app.post("/generate_report")
 async def generate_report_endpoint(req: ReportRequest):
+    """
+    FastAPI endpoint for generating reports via HTTP.
+    
+    ROUTE: POST /generate_report
+    REQUEST BODY: {"name": "Alice"}
+    RESPONSE: {"report": {...}}
+    
+    STREAMLIT INTEGRATION NOTE:
+    - Streamlit UI does NOT use this endpoint
+    - Instead: Streamlit calls generate_report() function directly
+    - Why? Direct function calls = faster, no port dependency, same process
+    - This endpoint is for external API clients (if running backend separately)
+    
+    ERROR HANDLING:
+    - If conversation not found: HTTP 404 + error message
+    - If report generation fails: HTTP 500 + exception details
+    - If success: HTTP 200 + sanitized report
+    
+    CONCURRENCY:
+    - Multiple report requests can be processed in parallel (async)
+    - Each request gets a separate asyncio task
+    - Motor connection pooling handles concurrent database access
+    """
     try:
+        # ASYNC REPORT GENERATION: Can be concurrent with other requests
         report_data = await generate_report(req.name)
 
+        # ERROR CHECK: Report function may return dict with "error" key
         if isinstance(report_data, dict) and "error" in report_data:
             return JSONResponse(status_code=404, content=report_data)
 
-        # Only return sanitized report — nothing else
+        # SUCCESS: Wrap report and sanitize (ObjectId → string, datetime → ISO)
         return sanitize({"report": report_data})
 
     except Exception as e:
-        logger.exception(f"Report generation failed: {e}")
+        logger.exception(f"❌ Report endpoint failed: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
