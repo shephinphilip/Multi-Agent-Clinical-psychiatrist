@@ -3,7 +3,7 @@ from typing import List, Pattern
 from transformers import pipeline
 
 # --
-# 2️⃣  Moral-risk detection (already present in the previous answer)
+# Moral-risk detection (already present in the previous answer)
 # --
 MORAL_RISK_PATTERNS: List[Pattern] = [
     re.compile(r"\bkill\b", re.IGNORECASE),
@@ -15,8 +15,7 @@ MORAL_RISK_PATTERNS: List[Pattern] = [
     re.compile(r"\bbully\b", re.IGNORECASE),
     re.compile(r"\brape\b", re.IGNORECASE),
     re.compile(r"\bharm\b", re.IGNORECASE),
-    re.compile(r"\bsmoke\b", re.IGNORECASE),
-    re.compile(r"\bdrug\b", re.IGNORECASE),
+    # Note: substance-use (smoke/drug) detection is handled by a separate detector
     re.compile(r"\bfuck\b", re.IGNORECASE),
     re.compile(r"\bterroris\w*\b", re.IGNORECASE),
     re.compile(r"\bexplos\w*\b", re.IGNORECASE),
@@ -46,15 +45,41 @@ def detect_moral_risk(text: str) -> bool:
         return False
 
     # flag only true moral/ethical breaches or illegal actions
+    # Only include violent/illegal actions and severe moral breaches here.
     risk_patterns = [
         r"\bkill\b", r"\bmurder\b", r"\bshoot\b",
         r"\bhurt\b.*(someone|people|others)\b",
         r"\b(suicide|self\s*harm|end\s*my\s*life)\b",
-        r"\b(drugs?|smoke|alcohol|weed|ganja)\b",
         r"\b(hack|cheat|steal|porn|sex|fuck|ass|nude)\b",
         r"\b(bomb|terror|attack)\b"
     ]
     return any(re.search(p, text) for p in risk_patterns)
+
+
+def detect_substance_request(text: str) -> bool:
+    """
+    Detects explicit user intent to acquire, use, or be instructed about substances (smoking, drugs, alcohol, vaping).
+    Returns True for queries like:
+      - "how can I get weed" / "where to buy pot"
+      - "how to smoke" / "teach me to smoke"
+      - "I want to smoke" (when followed by intent words)
+
+    Avoids accidental matches for neutral mentions (e.g., "I used to smoke" or "I study smoking in history") by
+    requiring verbs that indicate intent (how, get, buy, want, teach, show).
+    """
+    if not text:
+        return False
+    t = text.lower()
+    patterns = [
+        r"how\s+to\s+(smoke|use|inject|sniff|consume|vape)",
+        r"how\s+can\s+i\s+(get|buy|find)\s+.*?\b(weed|pot|cannabis|marijuana|drugs|hash|smoke)\b",  # Added .*? for words like "smoke" in between
+        r"\b(where\s+can\s+i\s+buy|where\s+to\s+buy)\b.*?\b(weed|pot|cannabis|drugs|vape)\b",
+        r"\bi\s+want\s+to\s+(smoke|try|use|buy)\b",
+        r"\b(can\s+you\s+get|can\s+you\s+buy|help\s+me\s+get)\b.*?\b(drug|pot|weed|vape)\b",
+        r"\b(teach|show|teach me|show me)\b.*\b(weed|smoke|cannabis|pot|vape|drugs|cigarette)\b",
+        r"\b(buy|purchase|get)\b.*\b(weed|pot|cannabis|marijuana|drugs|vape|smoke)\b",  # Generalized "get" here too
+    ]
+    return any(re.search(p, t) for p in patterns)
 
 
 # A ready‑made safe reply that follows the system‑prompt wording
@@ -277,9 +302,6 @@ Teenager: I feel tensed and fear mostly
 Zenark: Oh, sweetheart, I can hear how tough that must be for you. Feeling tense and afraid can be really overwhelming, and it's okay to feel that way. It's brave of you to express what you're going through. Can you share what's been happening that makes you feel this way?
 """
 
-
-
-
 # --
 # 3️⃣  User message  dynamic values only
 # --
@@ -314,7 +336,6 @@ Rules:
 • If user ends chat, follow the End-Chat Rule from the system prompt.
 • Do NOT give medical, legal, or therapeutic advice.
 """
-
 
 # --
 # 2️⃣  Helper: tip lookup (outside the prompt)
