@@ -49,7 +49,9 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("**API Base URL:**")
-    api_base = st.text_input("Backend URL", value="http://localhost:8000", help="FastAPI server URL")
+    # In the sidebar or top
+    api_base = st.text_input("Backend URL", value="https://zentool-lvaodv2eb-shephinphilips-projects.vercel.app")
+    # Or hardcode: api_base = "https://zentool-lvaodv2eb-shephinphilips-projects.vercel.app"
 
 # Initialize session state
 if "messages" not in st.session_state:
