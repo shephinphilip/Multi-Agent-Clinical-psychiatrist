@@ -2,6 +2,14 @@
 # ZENARK MENTAL HEALTH BOT - PRODUCTION FASTAPI
 # SCALABLE FOR 1M+ USERS WITH ASYNC MONGODB & LANGGRAPH
 # WITH IN-MEMORY CACHING LAYER TO SAVE TOKENS
+# WITH INTELLIGENT ROUTER MEMORY (STM + LTM)
+# ============================================
+#
+# ROUTER MEMORY SYSTEM:
+# - SHORT-TERM MEMORY (STM): Session-based context (tool sequence, emotion pattern, topics)
+# - LONG-TERM MEMORY (LTM): Persistent across sessions (tool preferences, dominant emotions, conversation history)
+# - CONTEXT-AWARE ROUTING: Detects patterns like academic stress, emotional spirals, and conversation flow
+# - PRODUCTION-READY: Async MongoDB persistence, indexed lookups, scalable for 1M+ users
 # ============================================
 
 import os
@@ -84,13 +92,14 @@ llm_exam = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 client: Optional[AsyncIOMotorClient] = None
 chats_col: Optional[AsyncIOMotorCollection] = None
 marks_col: Optional[AsyncIOMotorCollection] = None
+router_memory_col: Optional[AsyncIOMotorCollection] = None  # NEW: Router memory collection
 
 # Global graph (compiled once at startup for scalability)
 compiled_graph = None
 
 async def init_db() -> None:
     """Initialize MongoDB collections asynchronously using Motor (called at startup)."""
-    global client, chats_col, marks_col
+    global client, chats_col, marks_col, router_memory_col
     try:
         # Motor uses built-in connection pooling for high concurrency (1M+ users)
         client = AsyncIOMotorClient(CONFIG.mongo_uri, maxPoolSize=200, minPoolSize=10)
@@ -98,10 +107,14 @@ async def init_db() -> None:
 
         chats_col = db["chat_sessions"]
         marks_col = db["student_marks"]
+        router_memory_col = db["router_memory"]  # NEW: Router memory collection
 
         # Create indexes for fast queries (O(1) lookups for sessions/marks)
         await chats_col.create_index([("session_id", 1)], unique=True, sparse=True)
         await marks_col.create_index([("_id", 1)])
+        await router_memory_col.create_index([("session_id", 1)])
+        await router_memory_col.create_index([("student_id", 1)])
+        await router_memory_col.create_index([("session_id", 1), ("student_id", 1)], unique=True)
 
         logging.info("✅ Async MongoDB (Motor) connection established with indexes.")
     except Exception as e:
@@ -749,11 +762,141 @@ If you fail to output a tool call, you must respond exactly: "ERROR: Return a to
 REMEMBER: Mental health is our focus. Even academic queries deserve empathetic handling."""
 
 # ============================================
-# ROUTER
+# ROUTER MEMORY MANAGER (STM + LTM)
+# ============================================
+
+class RouterMemory:
+    """Intelligent router memory with STM (session) and LTM (persistent) capabilities"""
+    
+    def __init__(self, session_id: str, student_id: str, router_memory_col: AsyncIOMotorCollection):
+        self.session_id = session_id
+        self.student_id = student_id
+        self.router_memory_col = router_memory_col
+        
+        # Short-term memory (current session)
+        self.stm_tool_sequence: List[str] = []  # Tool usage sequence in current session
+        self.stm_emotion_pattern: List[str] = []  # Emotion pattern in current session
+        self.stm_topic_focus: List[str] = []  # Topic focus in current session
+        
+        # Long-term memory (loaded from MongoDB)
+        self.ltm_tool_preferences: Dict[str, int] = {}  # Tool usage frequency across all sessions
+        self.ltm_dominant_emotions: List[str] = []  # Dominant emotions across sessions
+        self.ltm_recurring_topics: List[str] = []  # Recurring topics across sessions
+        self.ltm_conversation_count: int = 0  # Total conversations across sessions
+        
+        # Contextual insights
+        self.last_tool: Optional[str] = None
+        self.last_emotion: Optional[str] = None
+        self.conversation_flow: List[Dict[str, str]] = []  # Track conversation flow
+        
+    async def load_ltm(self) -> None:
+        """Load long-term memory from MongoDB"""
+        try:
+            doc = await self.router_memory_col.find_one({
+                "session_id": self.session_id,
+                "student_id": self.student_id
+            })
+            
+            if doc:
+                self.ltm_tool_preferences = doc.get("tool_preferences", {})
+                self.ltm_dominant_emotions = doc.get("dominant_emotions", [])
+                self.ltm_recurring_topics = doc.get("recurring_topics", [])
+                self.ltm_conversation_count = doc.get("conversation_count", 0)
+                self.last_tool = doc.get("last_tool")
+                self.last_emotion = doc.get("last_emotion")
+                self.conversation_flow = doc.get("conversation_flow", [])[-10:]  # Last 10 interactions
+                
+                logging.info(f"📚 LTM loaded for session {self.session_id}: {self.ltm_conversation_count} conversations")
+        except Exception as e:
+            logging.warning(f"Failed to load LTM for session {self.session_id}: {e}")
+    
+    async def update_memory(self, tool_used: str, emotion: str, topic: str, user_text: str) -> None:
+        """Update both STM and LTM after routing decision"""
+        # Update STM
+        self.stm_tool_sequence.append(tool_used)
+        self.stm_emotion_pattern.append(emotion)
+        self.stm_topic_focus.append(topic)
+        
+        # Update LTM counters
+        self.ltm_tool_preferences[tool_used] = self.ltm_tool_preferences.get(tool_used, 0) + 1
+        self.ltm_conversation_count += 1
+        
+        # Update conversation flow
+        self.conversation_flow.append({
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "tool": tool_used,
+            "emotion": emotion,
+            "topic": topic,
+            "text_snippet": user_text[:50]
+        })
+        
+        # Keep only last 10 interactions in flow
+        self.conversation_flow = self.conversation_flow[-10:]
+        
+        # Update last states
+        self.last_tool = tool_used
+        self.last_emotion = emotion
+        
+        # Persist to MongoDB
+        try:
+            await self.router_memory_col.update_one(
+                {"session_id": self.session_id, "student_id": self.student_id},
+                {
+                    "$set": {
+                        "tool_preferences": self.ltm_tool_preferences,
+                        "dominant_emotions": self._calculate_dominant_emotions(),
+                        "recurring_topics": self._calculate_recurring_topics(),
+                        "conversation_count": self.ltm_conversation_count,
+                        "last_tool": self.last_tool,
+                        "last_emotion": self.last_emotion,
+                        "conversation_flow": self.conversation_flow,
+                        "updated_at": datetime.datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
+        except Exception as e:
+            logging.warning(f"Failed to persist router memory: {e}")
+    
+    def _calculate_dominant_emotions(self) -> List[str]:
+        """Calculate dominant emotions from STM pattern"""
+        from collections import Counter
+        if not self.stm_emotion_pattern:
+            return []
+        emotion_counts = Counter(self.stm_emotion_pattern)
+        return [emotion for emotion, _ in emotion_counts.most_common(3)]
+    
+    def _calculate_recurring_topics(self) -> List[str]:
+        """Calculate recurring topics from STM focus"""
+        from collections import Counter
+        if not self.stm_topic_focus:
+            return []
+        topic_counts = Counter(self.stm_topic_focus)
+        return [topic for topic, _ in topic_counts.most_common(3)]
+    
+    def get_context_summary(self) -> Dict[str, Any]:
+        """Get summarized context for routing decision"""
+        most_used = None
+        if self.ltm_tool_preferences:
+            most_used = max(self.ltm_tool_preferences.items(), key=lambda x: x[1])[0]
+        
+        return {
+            "last_tool": self.last_tool,
+            "last_emotion": self.last_emotion,
+            "session_tool_sequence": self.stm_tool_sequence[-3:],  # Last 3 tools in session
+            "session_emotion_pattern": self.stm_emotion_pattern[-3:],  # Last 3 emotions
+            "most_used_tool": most_used,
+            "dominant_emotions": self.ltm_dominant_emotions,
+            "conversation_count": self.ltm_conversation_count,
+            "recent_flow": self.conversation_flow[-3:]  # Last 3 interactions
+        }
+
+# ============================================
+# INTELLIGENT ROUTER (CONTEXT-AWARE BRAIN)
 # ============================================
 
 class Router:
-    """Enhanced router with regex patterns and session context awareness"""
+    """Intelligent router with contextual memory (STM + LTM) and adaptive decision-making"""
     
     SAFETY_PATTERNS = {
         'crisis_handler': [
@@ -783,21 +926,112 @@ class Router:
     }
     
     @staticmethod
-    def route(text: str, emotion: str, history: List[str], tool_history: List[str] = []) -> tuple[str, str]:
-        """Return (tool_name, tool_input) - Context-aware with previous tool and history"""
+    def extract_topic(text: str) -> str:
+        """Extract primary topic from user text"""
         text_lower = text.lower()
-        previous_tool = tool_history[-1] if tool_history else None
+        
+        # Academic topics
+        if re.search(r'\b(marks|score|grades?|exam|study)\b', text_lower):
+            return "academic"
+        # Emotional topics
+        elif re.search(r'\b(sad|happy|angry|fear|anxiety|depress)\b', text_lower):
+            return "emotional"
+        # Crisis topics
+        elif re.search(r'\b(hurt|harm|suicide|kill)\b', text_lower):
+            return "crisis"
+        # Substance topics
+        elif re.search(r'\b(smoke|drug|alcohol|weed)\b', text_lower):
+            return "substance"
+        else:
+            return "general"
+    
+    @staticmethod
+    async def route_with_memory(
+        text: str,
+        emotion: str,
+        history: List[str],
+        tool_history: List[str],
+        router_memory: RouterMemory
+    ) -> tuple[str, str]:
+        """Intelligent routing with contextual memory awareness"""
+        text_lower = text.lower()
+        
+        # Get memory context
+        memory_context = router_memory.get_context_summary()
+        last_tool = memory_context["last_tool"]
+        last_emotion = memory_context["last_emotion"]
+        session_tools = memory_context["session_tool_sequence"]
+        
+        logging.info(f"🧠 Router Memory Context: last_tool={last_tool}, emotion_pattern={memory_context['session_emotion_pattern']}, conversation_count={memory_context['conversation_count']}")
+        
+        # Priority 1: Safety (ALWAYS highest priority, overrides context)
+        for tool_name, patterns in Router.SAFETY_PATTERNS.items():
+            if any(re.search(p, text_lower, re.IGNORECASE) for p in patterns):
+                logging.info(f"🚨 Router: {tool_name} (SAFETY OVERRIDE - ignoring context)")
+                topic = Router.extract_topic(text)
+                await router_memory.update_memory(tool_name, emotion, topic, text)
+                return tool_name, text
+        
+        # Priority 2: Context-aware intelligent routing
+        
+        # Contextual pattern: Academic follow-up (marks → exam tips)
+        if last_tool == "marks_tool" and any(re.search(p, text_lower, re.IGNORECASE) for p in Router.ACADEMIC_PATTERNS['exam_tips_tool']):
+            logging.info(f"🧠 Router: exam_tips_tool (CONTEXT: follow-up to marks discussion)")
+            topic = Router.extract_topic(text)
+            await router_memory.update_memory("exam_tips_tool", emotion, topic, text)
+            return "exam_tips_tool", text
+        
+        # Contextual pattern: Emotional spiral detection (negative → negative → negative)
+        if len(session_tools) >= 2 and session_tools[-1] == "negative_conversation_handler" and session_tools[-2] == "negative_conversation_handler":
+            if emotion == "negative" and not any(re.search(p, text_lower, re.IGNORECASE) for p in Router.ACADEMIC_PATTERNS['marks_tool']):
+                logging.info(f"🧠 Router: negative_conversation_handler (CONTEXT: emotional spiral detected - 3rd negative in row)")
+                topic = Router.extract_topic(text)
+                await router_memory.update_memory("negative_conversation_handler", emotion, topic, text)
+                return "negative_conversation_handler", text
+        
+        # Contextual pattern: Academic stress detection (marks → negative emotion)
+        if last_tool == "marks_tool" and emotion == "negative" and not any(re.search(p, text_lower, re.IGNORECASE) for p in Router.ACADEMIC_PATTERNS['marks_tool']):
+            logging.info(f"🧠 Router: negative_conversation_handler (CONTEXT: academic stress follow-up)")
+            topic = "academic_stress"
+            await router_memory.update_memory("negative_conversation_handler", emotion, topic, text)
+            return "negative_conversation_handler", text
+        
+        # Priority 3: Regex pattern matching (with context awareness)
+        for tool_name, patterns in Router.ACADEMIC_PATTERNS.items():
+            if any(re.search(p, text_lower, re.IGNORECASE) for p in patterns):
+                logging.info(f"🔍 Router: {tool_name} (PATTERN match with context={last_tool})")
+                topic = Router.extract_topic(text)
+                await router_memory.update_memory(tool_name, emotion, topic, text)
+                return tool_name, text
+        
+        # Priority 4: Emotion-based routing (with history awareness)
+        if emotion == "positive":
+            logging.info(f"😊 Router: positive_conversation_handler (emotion={emotion}, last={last_emotion})")
+            topic = Router.extract_topic(text)
+            await router_memory.update_memory("positive_conversation_handler", emotion, topic, text)
+            return "positive_conversation_handler", text
+        elif emotion == "negative":
+            logging.info(f"😔 Router: negative_conversation_handler (emotion={emotion}, last={last_emotion})")
+            topic = Router.extract_topic(text)
+            await router_memory.update_memory("negative_conversation_handler", emotion, topic, text)
+            return "negative_conversation_handler", text
+        
+        # Priority 5: Fallback (with memory-based suggestion)
+        logging.info(f"🤔 Router: llm_generate (FALLBACK - most_used_tool={memory_context['most_used_tool']})")
+        topic = Router.extract_topic(text)
+        await router_memory.update_memory("llm_generate", emotion, topic, text)
+        return "llm_generate", text
+    
+    @staticmethod
+    def route(text: str, emotion: str) -> tuple[str, str]:
+        """Legacy sync route method (kept for backward compatibility) - use route_with_memory() for intelligent routing"""
+        text_lower = text.lower()
 
         # Priority 1: Safety (regex matching) - Overrides context
         for tool_name, patterns in Router.SAFETY_PATTERNS.items():
             if any(re.search(p, text_lower, re.IGNORECASE) for p in patterns):
                 logging.info(f"🔍 Router: {tool_name} (safety match)")
                 return tool_name, text
-
-        # Context-aware academic routing
-        if previous_tool == "marks_tool" and any(re.search(p, text_lower, re.IGNORECASE) for p in Router.ACADEMIC_PATTERNS['exam_tips_tool']):
-            logging.info(f"🔍 Router: exam_tips_tool (follow-up to marks_tool)")
-            return "exam_tips_tool", text
 
         # Priority 2: Academic
         for tool_name, patterns in Router.ACADEMIC_PATTERNS.items():
@@ -818,26 +1052,47 @@ class Router:
         return "llm_generate", text
 
 # ============================================
-# GRAPH NODES
+# GRAPH NODES (WITH ROUTER MEMORY INTEGRATION)
 # ============================================
 
 async def router_node(state: GraphState) -> Dict[str, Any]:
-    """Route user input to appropriate tool"""
+    """Route user input to appropriate tool using intelligent memory-aware router"""
     text = state["user_text"]
     emotion = emotion_detector.detect(text)
+    session_id = state["session_id"]
+    student_id = state["student_id"]
     
     # Extract recent history for context
     history = state.get("history_snippets", [])
     tool_history = state.get("tool_history", [])
     
-    tool_name, tool_input = Router.route(text, emotion, history, tool_history)
+    # Initialize RouterMemory for this request
+    if router_memory_col is None:
+        raise RuntimeError("Router memory collection not initialized")
+    
+    router_memory = RouterMemory(session_id, student_id, router_memory_col)
+    await router_memory.load_ltm()  # Load long-term memory from MongoDB
+    
+    # Use intelligent routing with memory
+    tool_name, tool_input = await Router.route_with_memory(
+        text=text,
+        emotion=emotion,
+        history=history,
+        tool_history=tool_history,
+        router_memory=router_memory
+    )
     
     return {
         "emotion": emotion,
         "selected_tool": tool_name,
         "tool_input": tool_input,
         "tool_history": tool_history + [tool_name],
-        "debug_info": {"emotion": emotion, "tool": tool_name, "previous_tool": tool_history[-1] if tool_history else None}
+        "debug_info": {
+            "emotion": emotion,
+            "tool": tool_name,
+            "previous_tool": tool_history[-1] if tool_history else None,
+            "memory_context": router_memory.get_context_summary()
+        }
     }
 
 async def tool_dispatch(state: GraphState) -> Dict[str, Any]:
@@ -1043,6 +1298,38 @@ async def chat_endpoint(chat_request: ChatRequest):
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "timestamp": datetime.datetime.utcnow()}
+
+@app.get("/router-memory/{session_id}/{student_id}")
+async def get_router_memory(session_id: str, student_id: str):
+    """Get router memory context for a user session (for debugging/insights)"""
+    try:
+        if router_memory_col is None:
+            raise HTTPException(status_code=500, detail="Router memory not initialized")
+        
+        router_memory = RouterMemory(session_id, student_id, router_memory_col)
+        await router_memory.load_ltm()
+        
+        context = router_memory.get_context_summary()
+        
+        return JSONResponse(content={
+            "session_id": session_id,
+            "student_id": student_id,
+            "memory_context": context,
+            "stm": {
+                "tool_sequence": router_memory.stm_tool_sequence,
+                "emotion_pattern": router_memory.stm_emotion_pattern,
+                "topic_focus": router_memory.stm_topic_focus
+            },
+            "ltm": {
+                "tool_preferences": router_memory.ltm_tool_preferences,
+                "dominant_emotions": router_memory.ltm_dominant_emotions,
+                "recurring_topics": router_memory.ltm_recurring_topics,
+                "conversation_count": router_memory.ltm_conversation_count
+            }
+        })
+    except Exception as e:
+        logging.error(f"Error retrieving router memory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ===================================================
 # RUN SERVER
