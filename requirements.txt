@@ -1,21 +1,49 @@
-streamlit
-pymongo
-python-dotenv
-motor
-langchain
-langchain_classic
-langchain_openai
-langchain_community
-langchain_core
-langchain_huggingface
-faiss-cpu
-torch
-transformers
-sentence-transformers
-scikit-learn
-pyautogen 
-autogen
-jq
-fastapi-limiter
-fastapi-cache2
-prometheus-client
+# Web Framework
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+
+# Database & Storage
+pymongo>=4.6.0
+motor>=3.3.2
+redis>=5.0.0
+
+# Vector Database (Optional)
+qdrant-client>=1.7.0
+
+# AI/ML
+openai>=1.3.0
+transformers>=4.35.0
+sentence-transformers>=2.2.2
+torch>=2.1.0
+huggingface-hub>=0.19.0
+
+# LangChain & LangGraph
+langchain>=0.1.0
+langchain-openai>=0.0.2
+langchain-community>=0.0.10
+langchain-core>=0.1.0
+langchain-huggingface>=0.0.1
+langgraph>=0.0.20
+
+# ML Libraries
+scikit-learn>=1.3.2
+faiss-cpu>=1.7.4
+
+# Utilities
+python-dotenv>=1.0.0
+jq>=1.6.0
+
+# Monitoring & Performance
+prometheus-client>=0.19.0
+fastapi-limiter>=0.1.5
+fastapi-cache2>=0.2.1
+
+# Streamlit (optional)
+streamlit>=1.28.0
+
+# Development
+pytest>=7.4.3
+pytest-asyncio>=0.21.1
+black>=23.11.0
+flake8>=6.1.0
