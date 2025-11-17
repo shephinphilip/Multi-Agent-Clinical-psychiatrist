@@ -1951,6 +1951,18 @@ Return only a single integer (1–10) as the Global Distress Score."""
         logging.warning(f"📊 Fallback score for {session_id}: 5 (due to processing error)")
         return JSONResponse(content={"session_id": session_id, "global_distress_score": 5, "warning": "Fallback score due to processing error"})
 
+# Vercel entrypoint (wraps your app)
+# ASGI-compliant handler (Vercel calls this)
+async def handler(scope, receive, send):
+    """
+    Vercel entrypoint: Forwards to FastAPI as ASGI.
+    Fixes the 'receive/send' error by using full ASGI spec.
+    """
+    await app(scope, receive, send)  # Direct ASGI call—no Request wrapper needed
+
+# Export for Vercel (they look for 'handler')
+__all__ = ["handler"]
+    
 # ===================================================
 # RUN SERVER
 # ===================================================
